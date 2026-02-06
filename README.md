@@ -145,7 +145,7 @@ Restart Home Assistant or reload `YAML configuration` if you already had `comman
 You can run the script in a lot of different ways, and that will depend upon the type of information you want to display.
 Here are some examples but it really is easier to experiment from the command line to see what might be useful for you.
 
-Remembe if you have `jq` you can filter all these command through it to make it easier to see the structure of the returned data.
+If you have `jq` you can filter all these command through it to make it easier to see the structure of the returned data.
 
 ### Basic Commands
 
@@ -434,7 +434,7 @@ content: |
   Open: {{ station.open_today or 'Unknown' }}
   {% endfor %}
 ```
-Here is a more advanced markdown display (actually the one I use which provides links to Waze for navigation from the Postcode display, the `card_mod` on the end is to remove grid lines in the display):
+Here is a more advanced markdown display (actually the one I use which provides links to Waze for navigation from the Postcode display, the `card_mod` on the end is to remove grid lines from the table):
 ```yaml
   - type: markdown
     title: Local Fuel Prices
@@ -626,9 +626,6 @@ python3 uk_fuel_finder.py --station-name "tesco" --lat 51.5074 --lon -0.1278 --r
 # Search by brand
 python3 uk_fuel_finder.py --station-name "shell" --lat 53.8008 --lon -1.5491 --radius-miles 5
 
-# Regex: starts with "BP " (note the space to exclude "BP M&S")
-python3 uk_fuel_finder.py --station-name "^BP " --lat 51.5074 --lon -0.1278 --radius-km 8
-
 # Regex: OR pattern - find Sainsbury's OR Tesco
 python3 uk_fuel_finder.py --station-name "sainsbury|tesco" --lat 55.9533 --lon -3.1883 --radius-miles 10
 
@@ -689,7 +686,6 @@ python3 uk_fuel_finder.py --station-name "esso" --lat 51.5074 --lon -0.1278 --ra
 | Pattern | Matches | Example |
 |---------|---------|---------|
 | `tesco` | Contains "tesco" anywhere | "TESCO EXTRA", "Tesco Express" |
-| `^BP ` | Starts with "BP " | "BP Station" (not "BP M&S") |
 | `shell\|esso` | Contains "shell" OR "esso" | "Shell", "Esso", "Shell Express" |
 | `^jet$` | Exactly "jet" | "JET" (not "JET STOP") |
 | `SW1A\|W1` | Postcode starts with SW1A or W1 | "SW1A 1AA", "W1T 1AA" |
