@@ -717,6 +717,12 @@ def process_prices_to_dict(prices_data):
             except (ValueError, TypeError):
                 continue
 
+            # Fix data entry errors: 
+            # if price < 2p, it's likely in pounds (multiply by 100)
+            if price < 2.0:
+                debug_print(f"Fixed price error: {price}p -> {price * 100}p for {fuel_type} at station {node_id[:8]}...")
+                price = price * 100
+
             timestamp = fuel.get("price_last_updated")
 
             station_prices[fuel_type] = {"price": price, "timestamp": timestamp}

@@ -57,15 +57,16 @@ cd /config/scripts
 ```
 
 If you are running Home Assistant any other way, or using this for another application, then just run it from
-thew command line (after checking you have setup the coniguration correctly so you know which directories the
-data will be saved in).
+the command line (after checking you have setup the coniguration correctly so you know which directories the
+data will be saved in! I can't do that for you).
 
 ```bash
 cd /config/scripts
 python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --debug
 ```
 
-If you have `jq` available (it is inside the Home Assistant environment) then you can run this test:
+If you have `jq` available (it is inside the Home Assistant Docker environment) then you can run the test and
+use `jq` to format the output:
 ```bash
 cd /config/scripts
 python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --debug | jq
@@ -75,7 +76,7 @@ First run takes ~3 minutes (downloads all UK stations and sets up the state file
 
 ### 5. Add to Home Assistant
 
-Add to `configuration.yaml` or an included (`command_line: !include command_line.yaml` for example) sensor file:
+Add to `configuration.yaml` or an included (`command_line: !include command_line.yaml` for example) sensor definition:
 
 ```yaml
 command_line:
@@ -110,7 +111,7 @@ command_line:
 
 This example creates two sensors in Home Assistant. You can change the command line to obtain the output you want.
 
-For reference, here is the one I use (the markdown lovelace card I use to display is show below):
+For reference, here is the one I use (the markdown lovelace card I use to display the sensor is show below):
 
 ```yaml
 # Petrol Prices
@@ -394,6 +395,8 @@ All stations include these fields:
 | `newest_price` | details | Most recent price update timestamp across all returned stations |
 
   > All prices are in pence per litre (142.9p = £1.429/litre) - but this is AS REPORTED by the station.
+  > It is not uncommon for stations to mistakenly input prices as 1.429/litre, the script
+  > automatically correct these where it is obviously an input error.
 
 ## Home Assistant Dashboard
 
@@ -421,7 +424,7 @@ content: |
   Open: {{ station.open_today or 'Unknown' }}
   {% endfor %}
 ```
-Here is a more advanced markdown display (actually the one I use which provides links to Waze for navigation from the Postcode display, the cardmod on the end is to remove grid lines in the display):
+Here is a more advanced markdown display (actually the one I use which provides links to Waze for navigation from the Postcode display, the `card_mod` on the end is to remove grid lines in the display):
 ```yaml
   - type: markdown
     title: Local Fuel Prices
@@ -440,7 +443,7 @@ Here is a more advanced markdown display (actually the one I use which provides 
             <td align="right">{{ station.e10_price }}p</td>
           </tr>
           <tr>
-            <td colspan="3"><font size=1 color="grey">Open: {{ station.open_today }}, Dist: {{ station.distance_miles }} miles, Updated: {{ station.e10_updated | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0)}}</font></td>
+            <td colspan="3"><font size=1 color="grey">Open: {{ iif(station.open_today is not none, station.open_today, "NA") }}, Dist: {{ station.distance_miles }} miles, Updated: {{ station.e10_updated | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0)}}</font></td>
           </tr>
         {%- endfor -%}
         </table></center>
