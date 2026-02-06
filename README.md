@@ -26,7 +26,8 @@ Register for free at [UK Government Fuel Finder](https://www.fuel-finder.service
 
 ### 2. Install
 
-For Home Assistant copy uk_fuekl_finder.py into `/config` or somewhere below, I prefer `/config/scripts`.
+For Home Assistant copy `uk_fuel_finder.py` into `/config` or somewhere below, I prefer `/config/scripts`.
+For other uses just copy the script into a relevant directory.
 
 ### 3. Configure
 
@@ -43,8 +44,10 @@ You can set the defaults by editing the `DEFAULT_CONFIG` block in the script its
   "prices_incremental_hours": 1
 }
 ```
+If you are not using for Home Assistant then set these directory paths for your particular installation and
+ensure the correct access permissions are set so the script can update the `token_file` and `state_file`.
 
-All config options can also be overridden on the command line itself.
+All config options can also be overridden on the command line itself at runtime.
 
 ### 4. Test
 
@@ -58,7 +61,7 @@ cd /config/scripts
 
 If you are running Home Assistant any other way, or using this for another application, then just run it from
 the command line (after checking you have setup the coniguration correctly so you know which directories the
-data will be saved in! I can't do that for you).
+data will be saved in!).
 
 ```bash
 cd /config/scripts
@@ -66,13 +69,14 @@ python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --debug
 ```
 
 If you have `jq` available (it is inside the Home Assistant Docker environment) then you can run the test and
-use `jq` to format the output:
+use `jq` to format the output - it helps to see what is going on:
+
 ```bash
 cd /config/scripts
 python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --debug | jq
 ```
-
-First run takes ~3 minutes (downloads all UK stations and sets up the state files). Subsequent runs take <1 second.
+First run takes several minutes (downloads all UK stations and sets up the state files). Subsequent runs take <1 second.
+The API endpoints can take a while to repsond depending upon the load they are currently under.
 
 ### 5. Add to Home Assistant
 
@@ -109,7 +113,8 @@ command_line:
         - last_update
 ```
 
-This example creates two sensors in Home Assistant. You can change the command line to obtain the output you want.
+This example creates two sensors in Home Assistant that are updated every hour. 
+You can change the frequency and command line to obtain the output you want.
 
 For reference, here is the one I use (the markdown lovelace card I use to display the sensor is show below):
 
@@ -137,8 +142,10 @@ Restart Home Assistant or reload `YAML configuration` if you already had `comman
 
 ## Usage
 
-You can run the python script in a lot of different ways, and that will depend upon the type of information you want to display.
+You can run the script in a lot of different ways, and that will depend upon the type of information you want to display.
 Here are some examples but it really is easier to experiment from the command line to see what might be useful for you.
+
+Remembe if you have `jq` you can filter all these command through it to make it easier to see the structure of the returned data.
 
 ### Basic Commands
 
@@ -172,9 +179,12 @@ python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 \
 python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 20 \
   --fuel-types E10 --max-stations 3 --sort-by-price
 
-# Force full cache refresh
+# Force full cache refresh with query
 python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 \
   --full-refresh
+
+# Standalone cache refresh (no query, just updates cache)
+python3 uk_fuel_finder.py --full-refresh
 
 # Check cache health
 python3 uk_fuel_finder.py --healthcheck
@@ -207,7 +217,7 @@ python3 uk_fuel_finder.py --station-name "sainsbury|tesco" --lat 55.9533 --lon -
 | `--station-id` | string | No | Lookup specific station ID(s), comma-separated |
 | `--station-name` | string | No | Search stations by name/brand/postcode (regex supported, requires --lat/--lon/--radius) |
 | `--config` | path | No | Config file path (default: /config/scripts/uk_fuel_finder_config.json) |
-| `--full-refresh` | flag | No | Invalidate cache and redownload all data |
+| `--full-refresh` | flag | No | Invalidate cache and force full redownload (works standalone or with query) |
 | `--healthcheck` | flag | No | Check cache health and exit |
 | `--debug` | flag | No | Enable debug output to stderr |
 
@@ -231,7 +241,7 @@ python3 uk_fuel_finder.py --station-name "sainsbury|tesco" --lat 55.9533 --lon -
 
 ```
 First sensor run (e.g., 09:00):
-  ├─ Updates cache (~2s for incremental, ~170s for baseline)
+  ├─ Updates cache (~2s for incremental, ~300s for baseline)
   ├─ Filters to nearby stations
   └─ Returns results
 
@@ -396,7 +406,7 @@ All stations include these fields:
 
   > All prices are in pence per litre (142.9p = £1.429/litre) - but this is AS REPORTED by the station.
   > It is not uncommon for stations to mistakenly input prices as 1.429/litre, the script
-  > automatically correct these where it is obviously an input error.
+  > automatically corrects these where it is obviously an input error.
 
 ## Home Assistant Dashboard
 
@@ -431,7 +441,8 @@ Here is a more advanced markdown display (actually the one I use which provides 
     content: >-
       {%- if states('sensor.local_petrol_prices') | int | default(0, true) >= 1
       -%}
-        <center><table width="100%">
+        <center>
+        <table width="100%">
         {%- for station in
              state_attr('sensor.local_petrol_prices', 'stations')
              | selectattr('e10_price', 'defined')
@@ -446,7 +457,9 @@ Here is a more advanced markdown display (actually the one I use which provides 
             <td colspan="3"><font size=1 color="grey">Open: {{ iif(station.open_today is not none, station.open_today, "NA") }}, Dist: {{ station.distance_miles }} miles, Updated: {{ station.e10_updated | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0)}}</font></td>
           </tr>
         {%- endfor -%}
-        </table></center>
+        </table>
+        </center>
+        <p><font size=1 color="grey">Updated: {{ state_attr('sensor.local_petrol_prices', 'last_update') | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0)}}</font></p>
       {%- else -%}
         <center>No Fuel Prices Available</center>
       {%- endif -%}
