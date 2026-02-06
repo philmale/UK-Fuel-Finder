@@ -1,6 +1,8 @@
-# UK Fuel Finder - Home Assistant Integration
+# UK Fuel Finder
 
-Multi-sensor fuel price monitoring with intelligent caching and incremental updates for the UK Government Fuel Finder API.
+Fuel price monitoring with intelligent caching and incremental updates for the UK Government Fuel Finder API.
+Designed to work with Home Assistant `command_line` sensors, but will work with any application that can
+accept JSON stuctured data.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
