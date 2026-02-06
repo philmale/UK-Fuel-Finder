@@ -5,17 +5,9 @@ UK Fuel Finder - Home Assistant Integration
 
 Multi-sensor fuel price monitoring with intelligent caching and incremental updates.
 
-FEATURES
---------
-- Shared cache: All sensors share UK-wide stations and prices data
-- Smart updates: Monthly baseline + hourly incremental updates
-- Multi-sensor support: Run multiple instances with different locations
-- File locking: Safe concurrent access when multiple sensors run simultaneously
-- Debug output: Comprehensive progress tracking to stderr
-
 CONFIGURATION
 -------------
-Create a config file with API credentials and cache settings:
+Edit DEFAULT_CONFIG in the source below, or create a config file with API credentials and cache settings:
 
 {
   "client_id": "YOUR_CLIENT_ID",
@@ -61,7 +53,7 @@ Search for stations by name (requires location to limit results):
 
 HOME ASSISTANT INTEGRATION
 ---------------------------
-Add multiple sensors to configuration.yaml:
+Add sensors to configuration.yaml:
 
 command_line:
   - sensor:
@@ -88,28 +80,6 @@ command_line:
         - stations
         - last_update
 
-HOW IT WORKS
-------------
-Shared Cache Strategy:
-  - First sensor of the hour: Updates cache (1-2s for incremental, 170s for baseline)
-  - Subsequent sensors: Use fresh cache instantly
-  - Monthly baseline: Full UK download every 30 days
-  - Hourly incremental: Only changed stations/prices since last update
-
-File Locking:
-  - Uses fcntl (Unix) to prevent concurrent cache updates
-  - Multiple sensors can run simultaneously safely
-  - Lock automatically released on script completion
-
-Cache Structure:
-  {
-    "all_uk_stations": {...},              # All 6,794+ UK stations
-    "all_uk_prices": {...},                # All UK fuel prices
-    "stations_baseline_at": "ISO datetime",
-    "stations_last_incremental": "ISO datetime",
-    "prices_last_incremental": "ISO datetime"
-  }
-
 OUTPUT FORMAT
 -------------
 JSON object with:
@@ -117,42 +87,8 @@ JSON object with:
   attributes:
     best_e10: Cheapest E10 station {name, postcode, miles, price}
     best_b7: Cheapest B7 diesel station {name, postcode, miles, price}
-    stations: Array sorted by distance
+    stations: Array sorted by distancep or price
     last_update: ISO timestamp
-
-REQUIREMENTS
-------------
-- Python 3.7+
-- requests library: pip install requests
-- UK Fuel Finder API credentials (free registration)
-
-API RATE LIMITS
----------------
-Live environment: 120 requests/minute, 10,000 requests/day
-This script stays well under limits through intelligent caching and batching.
-
-TROUBLESHOOTING
----------------
-Cache seems stale:
-  -> Use --full-refresh to force complete redownload
-
-Multiple sensors interfering:
-  -> File locking handles this automatically
-
-API timeouts:
-  -> Script retries with exponential backoff automatically
-
-Need to see what's happening:
-  -> Use --debug flag to see detailed progress
-
-AUTHOR
-------
-Created for Home Assistant integration with UK Government Fuel Finder API.
-API documentation: https://www.fuel-finder.service.gov.uk/
-
-LICENSE
--------
-MIT License - Free to use and modify
 """
 
 import argparse

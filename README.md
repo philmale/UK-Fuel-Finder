@@ -135,7 +135,7 @@ Restart Home Assistant or reload `YAML configuration` if you already had `comman
 ## Usage
 
 You can run the python script in a lot of different ways, and that will depend upon the type of information you want to display.
-Here are some examples but it really is easier to experiment from the command line to see what might be useful.
+Here are some examples but it really is easier to experiment from the command line to see what might be useful for you.
 
 ### Basic Commands
 
@@ -391,7 +391,7 @@ All stations include these fields:
 | `cache_baseline` | details | When full station list was last downloaded (monthly) |
 | `newest_price` | details | Most recent price update timestamp across all returned stations |
 
-**Note:** All prices are in pence per litre (142.9p = £1.429/litre)
+  > All prices are in pence per litre (142.9p = £1.429/litre) - but this is AS REPORTED by the station.
 
 ## Home Assistant Dashboard
 
