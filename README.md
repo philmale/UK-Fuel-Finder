@@ -4,6 +4,8 @@ A command-line tool for querying UK fuel prices from the [Government Fuel Finder
 
 Built primarily for [Home Assistant](https://www.home-assistant.io/) as a `command_line` sensor, but works equally well as a standalone script outputting JSON to stdout.
 
+Script can be run repeatedly, and in parallel if required.
+
 ## Features
 
 - **Smart caching** — baseline + incremental updates minimise API calls; the cache rebuilds itself automatically
@@ -15,13 +17,18 @@ Built primarily for [Home Assistant](https://www.home-assistant.io/) as a `comma
 
 ## Prerequisites
 
-- Python 3.7+
+- Python 3.7+ (included in Home Assistant's Python environment)
 - The `requests` library (included in Home Assistant's Python environment)
 - API credentials from the [UK Fuel Finder service](https://www.fuel-finder.service.gov.uk/) — registration is free
 
 ## Quick Start (Standalone)
 
-You can run `uff.py` anywhere Python and `requests` are available. It stores its cache and config in a single working directory.
+Although this was primarily written for use within a Home Assistant environment
+you can run `uff.py` anywhere Python and `requests` are available.
+It stores its cache and config in a single working directory.
+
+Detailed instriuctions on installing for Home Assistant are below, but here is a quick
+guide to installing for any other environment.
 
 ```bash
 # Install requests if not already available
@@ -46,6 +53,8 @@ python3 uff.py \
 ```
 
 The `--debug` flag sends diagnostic messages to stderr so you can see the cache building progress. All JSON output goes to stdout, so it is always safe to pipe or parse.
+
+If you have `jq` available you can pipe the output through it to view the json structure anyway you want, just add `| jq` to the end of the command line.
 
 Once the cache is built, subsequent runs will be near-instant. Run it again without `--debug` to see the clean JSON output:
 
@@ -112,6 +121,8 @@ python3 /config/scripts/uff.py \
 
 The first run will take a few minutes as it downloads all station and price data from the API. You will see progress in the debug output. Once complete, run it again to confirm the cache is working — the second run should complete in under a second.
 
+If you have `jq` available inside your docker container (it should be) you can pipe the output through it to view the json structure anyway you want, just add `| jq` to the end of the command line.
+
 ### 4. Configure the Command Line Sensor
 
 Add the following to your `/config/configuration.yaml` if you haven't already:
@@ -141,6 +152,11 @@ Create (or add to) `/config/command_line.yaml`:
 ```
 
 Replace the `--lat` and `--lon` values with your location. The `scan_interval` of 1800 seconds (30 minutes) is a reasonable polling frequency — the script's internal cache means the API is only called when data has actually gone stale.
+
+This command will return the cheapest 5 petrol stations, sorted by price (cheapest first), within 10 miles of the specfied co-ordinates - simple to iterate over
+and display in a markdown card in a Lovelace dashboard.
+You can optionally add a block to the JSON output to show just the cheapest station by removing the `--no-best` option. See below for a 
+full list of command line arguments.
 
 You can add multiple sensors for different fuel types or locations. The file locking ensures they won't interfere with each other:
 
@@ -293,7 +309,7 @@ Each row shows the station name, brand, last price update time, a Waze navigatio
 | `--sort MODE`       | Sort order: `distance` (default) or `cheapest:<FUEL_TYPE>`    |
 | `--limit N`         | Maximum number of results (default: 10)                       |
 
-Regex filters are combined with AND across categories and OR within the same category. For example, `--re-brand "shell" --re-brand "bp" --re-town "london"` matches stations in London branded either Shell or BP.
+Regex filters are combined with AND across categories and OR within the same category. For example, `--re-brand "shell" --re-brand "bp" --re-town "london"` matches stations branded either Shell or BP.
 
 ### Working Directory Files
 
