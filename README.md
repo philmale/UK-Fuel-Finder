@@ -335,7 +335,7 @@ These can be overridden in `config.json`:
 
 ## API Documentation
 
-See [uff_apic.md](uff_api.md) for the full API specification.
+See [uff_api.md](uff_api.md) for the full API specification.
 
 ## Licence
 
