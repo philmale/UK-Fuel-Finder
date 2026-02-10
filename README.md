@@ -1,834 +1,330 @@
-# UK Fuel Finder
+# UK Fuel Finder (`uff.py`)
 
-Fuel price monitoring with intelligent caching and incremental updates for the UK Government Fuel Finder API.
-Designed to work with Home Assistant `command_line` sensors, but will work with any application that can
-accept JSON stuctured data.
+A command-line tool for querying UK fuel prices from the [Government Fuel Finder API](https://www.fuel-finder.service.gov.uk/) with intelligent caching, multi-sensor support, and flexible filtering.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+Built primarily for [Home Assistant](https://www.home-assistant.io/) as a `command_line` sensor, but works equally well as a standalone script outputting JSON to stdout.
 
 ## Features
 
-- **Smart Caching** - Download UK stations once, share across all queries
-- **Incremental Updates** - Monthly baseline + hourly incremental updates
-- **Multi-Sensor** - Run multiple instances for different locations
-- **Thread-Safe** - File locking for concurrent execution
-- **Flexible Fuel Types** - Track E10, E5, B7, B7 Premium, HVO, B10
-- **Customizable Output** - Sort by price or distance, limit results
-- **Health Check** - Monitor cache validity for automation
-- **Debug Mode** - Comprehensive progress tracking
+- **Smart caching** — baseline + incremental updates minimise API calls; the cache rebuilds itself automatically
+- **Multi-sensor safe** — file locking allows concurrent execution from multiple HA sensors without conflicts
+- **Fast queries** — after initial cache build, queries complete in under a second
+- **Flexible filtering** — regex patterns for station name, brand, postcode, town, and fuel type
+- **Data cleaning** — automatically detects and corrects price entry errors (prices reported in pounds instead of pence)
+- **All fuel types** — E10, E5, B7 Standard, B7 Premium, HVO, B10
 
-## Quick Start
+## Prerequisites
 
-### 1. Get API Credentials
+- Python 3.7+
+- The `requests` library (included in Home Assistant's Python environment)
+- API credentials from the [UK Fuel Finder service](https://www.fuel-finder.service.gov.uk/) — registration is free
 
-Register for free at [UK Government Fuel Finder](https://www.fuel-finder.service.gov.uk/) to get your `client_id` and `client_secret`.
+## Quick Start (Standalone)
 
-### 2. Install
+You can run `uff.py` anywhere Python and `requests` are available. It stores its cache and config in a single working directory.
 
-For Home Assistant copy `uk_fuel_finder.py` into `/config` or somewhere below, I prefer `/config/scripts`.
-For other uses just copy the script into a relevant directory.
+```bash
+# Install requests if not already available
+pip install requests
 
-### 3. Configure
+# Create a config directory
+mkdir -p ~/.config/uk_fuel_finder
 
-You can set the defaults by editing the `DEFAULT_CONFIG` block in the script itself, or you can create `/config/scripts/uk_fuel_finder_config.json`:
+# Create a minimal config file with your credentials
+cat > ~/.config/uk_fuel_finder/config.json << 'EOF'
+{
+  "client_id": "YOUR_CLIENT_ID",
+  "client_secret": "YOUR_CLIENT_SECRET"
+}
+EOF
+
+# Run a query (first run will take a few minutes to download all station data)
+python3 uff.py \
+  --config-dir ~/.config/uk_fuel_finder \
+  --lat 51.5074 --lon -0.1278 --radius-miles 5 \
+  --sort "cheapest:E10" --limit 5 --debug
+```
+
+The `--debug` flag sends diagnostic messages to stderr so you can see the cache building progress. All JSON output goes to stdout, so it is always safe to pipe or parse.
+
+Once the cache is built, subsequent runs will be near-instant. Run it again without `--debug` to see the clean JSON output:
+
+```bash
+python3 uff.py \
+  --config-dir ~/.config/uk_fuel_finder \
+  --lat 51.5074 --lon -0.1278 --radius-miles 5 \
+  --sort "cheapest:E10" --limit 5
+```
+
+For scheduled use, add it to crontab and redirect the output as needed.
+
+## Home Assistant Installation (Docker)
+
+These instructions are for Home Assistant running as a Docker container. For other installation types the steps should be straightforward to adapt — the key requirements are placing the script and its config inside the `/config` tree.
+
+### 1. Copy the Script
+
+Place `uff.py` into your Home Assistant scripts directory. If you don't already have one, create it:
+
+```bash
+mkdir -p /path/to/your/ha/config/scripts
+cp uff.py /path/to/your/ha/config/scripts/
+```
+
+This will be accessible inside the container as `/config/scripts/uff.py`.
+
+### 2. Create the Config Directory and Credentials
+
+The script stores its cache and reads credentials from a working directory. By default this is `/config/.storage/uk_fuel_finder`.
+
+```bash
+mkdir -p /path/to/your/ha/config/.storage/uk_fuel_finder
+```
+
+Create a `config.json` file with your API credentials:
 
 ```json
 {
-  "client_id": "your_client_id_here",
-  "client_secret": "your_client_secret_here",
-  "token_file": "/config/.storage/uk_fuel_finder/token.json",
-  "state_file": "/config/.storage/uk_fuel_finder/state.json",
-  "stations_baseline_days": 30,
-  "stations_incremental_hours": 1,
-  "prices_incremental_hours": 1
+  "client_id": "YOUR_CLIENT_ID",
+  "client_secret": "YOUR_CLIENT_SECRET"
 }
 ```
-If you are not using for Home Assistant then set these directory paths for your particular installation and
-ensure the correct access permissions are set so the script can update the `token_file` and `state_file`.
 
-All config options can also be overridden on the command line itself at runtime.
+> **Note:** You can alternatively pass credentials via `--client-id` and `--client-secret` command-line arguments, but storing them in `config.json` is more secure as they won't appear in process listings.
 
-### 4. Test
+### 3. Test from Inside the Container
 
-If you are using this for Home Assistant and running Home Assistant in a Docker container, run the test from
-inside the container:
+Open a shell inside your Home Assistant container:
 
 ```bash
-docker exec -ti homeassistant /bin/bash
-cd /config/scripts
+docker exec -it homeassistant /bin/bash
 ```
 
-If you are running Home Assistant any other way, or using this for another application, then just run it from
-the command line (after checking you have setup the coniguration correctly so you know which directories the
-data will be saved in!).
+> Replace `homeassistant` with your container name if it differs from the default.
+
+Run the script manually to build the initial cache:
 
 ```bash
-cd /config/scripts
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --debug
+python3 /config/scripts/uff.py \
+  --lat 51.5074 --lon -0.1278 --radius-miles 10 \
+  --sort "cheapest:E10" --limit 5 --debug
 ```
 
-If you have `jq` available (it is inside the Home Assistant Docker environment) then you can run the test and
-use `jq` to format the output - it helps to see what is going on:
+The first run will take a few minutes as it downloads all station and price data from the API. You will see progress in the debug output. Once complete, run it again to confirm the cache is working — the second run should complete in under a second.
 
-```bash
-cd /config/scripts
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --debug | jq
-```
-First run takes several minutes (downloads all UK stations and sets up the state files). Subsequent runs take <1 second.
-The API endpoints can take a while to repsond depending upon the load they are currently under.
+### 4. Configure the Command Line Sensor
 
-### 5. Add to Home Assistant
-
-Add to `configuration.yaml` or an included (`command_line: !include command_line.yaml` for example) sensor definition:
+Add the following to your `/config/configuration.yaml` if you haven't already:
 
 ```yaml
-command_line:
-  - sensor:
-      name: "Fuel Finder Home"
-      command: "python3 /config/scripts/uk_fuel_finder.py --lat 53.8345 --lon -1.5435 --radius-miles 10"
-      scan_interval: 3600
-      icon: "mdi:gas-station"
-      value_template: "{{ value_json.state }}"
-      json_attributes:
-        - mode
-        - found
-        - errors
-        - details
-        - stations
-        - last_update
-        
-  - sensor:
-      name: "Fuel Finder Work"
-      command: "python3 /config/scripts/uk_fuel_finder.py --lat 53.8008 --lon -1.5491 --radius-km 8"
-      scan_interval: 3600
-      icon: "mdi:gas-station"
-      value_template: "{{ value_json.state }}"
-      json_attributes:
-        - mode
-        - found
-        - errors
-        - details
-        - stations
-        - last_update
+command_line: !include command_line.yaml
 ```
 
-This example creates two sensors in Home Assistant that are updated every hour. 
-You can change the frequency and command line to obtain the output you want.
-
-For reference, here is the one I use (the markdown lovelace card I use to display the sensor is show below):
+Create (or add to) `/config/command_line.yaml`:
 
 ```yaml
-# Petrol Prices
+# UK Fuel Prices - E10
 - sensor:
-    name: "Local Petrol Prices"
-    unique_id: local_petrol_prices
-    scan_interval: 3600
+    name: "Local E10 Prices"
+    unique_id: local_e10_prices
+    scan_interval: 1800
     command_timeout: 900
-    command: "python3 /config/scripts/uk_fuel_finder.py  --lat 53.8008 --lon -1.5491 --radius-miles 8 --fuel-types e10"
+    command: >-
+      python3 /config/scripts/uff.py
+      --lat 51.5074 --lon -0.1278 --radius-miles 10
+      --sort "cheapest:E10" --limit 5 --no-best
     value_template: "{{ value_json.state }}"
-    icon: "{{ value_json.details.icon }}"
-    state_class: measurement
+    icon: "mdi:gas-station"
     json_attributes:
-      - mode
-      - found
-      - errors
-      - details
+      - generated_at
       - stations
-      - last_update
 ```
 
-Restart Home Assistant or reload `YAML configuration` if you already had `command_line` sensors defined.
+Replace the `--lat` and `--lon` values with your location. The `scan_interval` of 1800 seconds (30 minutes) is a reasonable polling frequency — the script's internal cache means the API is only called when data has actually gone stale.
 
-## Usage
+You can add multiple sensors for different fuel types or locations. The file locking ensures they won't interfere with each other:
 
-You can run the script in a lot of different ways, and that will depend upon the type of information you want to display.
-Here are some examples but it really is easier to experiment from the command line to see what might be useful for you.
-
-If you have `jq` you can filter all these command through it to make it easier to see the structure of the returned data.
-
-### Basic Commands
-
-```bash
-# Required arguments (London example)
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10
-
-# Using kilometers (Leeds example)
-python3 uk_fuel_finder.py --lat 53.8008 --lon -1.5491 --radius-km 8
-
-# With debug output (Edinburgh example)
-python3 uk_fuel_finder.py --lat 55.9533 --lon -3.1883 --radius-miles 10 --debug
+```yaml
+# UK Fuel Prices - B7 Diesel
+- sensor:
+    name: "Local Diesel Prices"
+    unique_id: local_diesel_prices
+    scan_interval: 1800
+    command_timeout: 900
+    command: >-
+      python3 /config/scripts/uff.py
+      --lat 51.5074 --lon -0.1278 --radius-miles 10
+      --sort "cheapest:B7_STANDARD" --limit 5 --no-best
+    value_template: "{{ value_json.state }}"
+    icon: "mdi:gas-station"
+    json_attributes:
+      - generated_at
+      - stations
 ```
 
-### Advanced Options
+Restart Home Assistant and the sensor(s) will appear.
 
-```bash
-# Track specific fuel types (London)
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 \
-  --fuel-types E5,B7_PREMIUM
+### 5. Dashboard Card
 
-# Show 5 nearest stations (Leeds)
-python3 uk_fuel_finder.py --lat 53.8008 --lon -1.5491 --radius-miles 10 \
-  --max-stations 5
-
-# Sort by price (cheapest first)
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 \
-  --sort-by-price
-
-# Show 3 cheapest E10 stations
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 20 \
-  --fuel-types E10 --max-stations 3 --sort-by-price
-
-# Force full cache refresh with query
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 \
-  --full-refresh
-
-# Standalone cache refresh (no query, just updates cache)
-python3 uk_fuel_finder.py --full-refresh
-
-# Check cache health
-python3 uk_fuel_finder.py --healthcheck
-
-# Lookup specific station(s) by ID
-python3 uk_fuel_finder.py --station-id abc123def456
-python3 uk_fuel_finder.py --station-id abc123,def456,ghi789 --fuel-types E10,E5
-
-# Lookup station with distance calculation
-python3 uk_fuel_finder.py --station-id abc123 --lat 51.5074 --lon -0.1278
-
-# Search for stations by name (requires location to limit results)
-python3 uk_fuel_finder.py --station-name "tesco" --lat 51.5074 --lon -0.1278 --radius-miles 10
-python3 uk_fuel_finder.py --station-name "shell" --lat 53.8008 --lon -1.5491 --radius-miles 5 --max-stations 10
-python3 uk_fuel_finder.py --station-name "^BP " --lat 51.5074 --lon -0.1278 --radius-km 8  # Regex: starts with "BP "
-python3 uk_fuel_finder.py --station-name "sainsbury|tesco" --lat 55.9533 --lon -3.1883 --radius-miles 10  # Regex: OR
-```
-
-### Command-Line Arguments
-
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `--lat` | float | Yes* | Latitude in decimal degrees |
-| `--lon` | float | Yes* | Longitude in decimal degrees |
-| `--radius-miles` | float | Yes** | Search radius in miles |
-| `--radius-km` | float | Yes** | Search radius in kilometers |
-| `--fuel-types` | string | No | Comma-separated fuel types (default: E10,B7_STANDARD) |
-| `--max-stations` | int | No | Limit number of results |
-| `--sort-by-price` | flag | No | Sort by price instead of distance |
-| `--station-id` | string | No | Lookup specific station ID(s), comma-separated |
-| `--station-name` | string | No | Search stations by name/brand/postcode (regex supported, requires --lat/--lon/--radius) |
-| `--config` | path | No | Config file path (default: /config/scripts/uk_fuel_finder_config.json) |
-| `--full-refresh` | flag | No | Invalidate cache and force full redownload (works standalone or with query) |
-| `--healthcheck` | flag | No | Check cache health and exit |
-| `--debug` | flag | No | Enable debug output to stderr |
-
-\* Not required for `--healthcheck` or `--station-id`  
-** Choose one: `--radius-miles` or `--radius-km` (not required for `--healthcheck` or `--station-id`)
-
-**Note:** `--station-name` ALWAYS requires location parameters to prevent returning thousands of results.
-
-### Available Fuel Types
-
-- `E10` - Unleaded petrol with up to 10% ethanol
-- `E5` - Unleaded petrol with up to 5% ethanol (premium)
-- `B7_STANDARD` - Diesel with up to 7% biodiesel
-- `B7_PREMIUM` - Premium diesel with up to 7% biodiesel
-- `B10` - Diesel with up to 10% biodiesel
-- `HVO` - Hydrotreated Vegetable Oil (renewable diesel)
-
-## How It Works
-
-### Shared Cache Architecture
-
-```
-First sensor run (e.g., 09:00):
-  ├─ Updates cache (~2s for incremental, ~300s for baseline)
-  ├─ Filters to nearby stations
-  └─ Returns results
-
-Second sensor run (e.g., 09:00):
-  ├─ Cache is fresh (skip update)
-  ├─ Filters to different location
-  └─ Returns results (instant)
-
-Third sensor run (e.g., 10:00):
-  ├─ Updates cache (~2s incremental)
-  ├─ Filters to nearby stations
-  └─ Returns results
-```
-
-### Update Strategy
-
-- **Monthly Baseline** (default: 30 days)
-  - Downloads all ~7,000 UK stations
-  - Takes ~3 minutes
-  - Catches new station openings and closures
-
-- **Hourly Incremental** (default: 1 hour)
-  - Downloads only changed stations/prices
-  - Takes ~2 seconds
-  - Keeps data fresh
-
-- **File Locking**
-  - Uses `fcntl` to prevent race conditions
-  - Multiple sensors can run simultaneously
-  - Automatic lock cleanup
-
-### Cache Structure
-
-```json
-{
-  "all_uk_stations": {
-    "station_id": {
-      "name": "Station Name",
-      "lat": 51.5074,
-      "lon": -0.1278,
-      ...
-    }
-  },
-  "all_uk_prices": {
-    "station_id": {
-      "E10": {"price": 142.9, "timestamp": "2026-02-04T12:00:00Z"},
-      "B7_STANDARD": {"price": 149.9, "timestamp": "2026-02-04T12:00:00Z"}
-    }
-  },
-  "stations_baseline_at": "2026-02-04T03:00:00",
-  "stations_last_incremental": "2026-02-04T23:00:00",
-  "prices_last_incremental": "2026-02-04T23:00:00"
-}
-```
-
-## Output Format
-
-All modes return a unified JSON structure:
-
-```json
-{
-  "state": 15,
-  "mode": "location",
-  "found": 15,
-  "errors": 0,
-  "details": {
-    "icon": "mdi:gas-station",
-    "best_e10": {
-      "name": "Tesco Anytown",
-      "postcode": "AB12 3CD",
-      "miles": 2.3,
-      "price": 142.9
-    },
-    "best_b7_standard": {
-      "name": "Shell Anytown",
-      "postcode": "AB12 4EF",
-      "miles": 1.8,
-      "price": 149.9
-    },
-    "radius_miles": 10.0,
-    "radius_km": 16.1,
-    "cache_updated": "2026-02-05T10:00:00.000Z",
-    "cache_baseline": "2026-02-05T03:00:00",
-    "newest_price": "2026-02-05T09:45:23.000Z"
-  },
-  "stations": [
-    {
-      "id": "station_id",
-      "name": "Tesco Anytown",
-      "brand": "TESCO",
-      "postcode": "AB12 3CD",
-      "lat": 51.5074,
-      "lon": -0.1278,
-      "distance_miles": 2.3,
-      "distance_km": 3.7,
-      "open_today": "06:00-22:00",
-      "is_motorway": false,
-      "is_supermarket": true,
-      "e10_price": 142.9,
-      "e10_updated": "2026-02-04T10:30:00Z",
-      "b7_standard_price": 150.2,
-      "b7_standard_updated": "2026-02-04T10:30:00Z"
-    }
-  ],
-  "last_update": "2026-02-04T14:25:00"
-}
-```
-
-### Top-Level Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `state` | int | Number of stations returned |
-| `mode` | string | Query mode: `location`, `station_id`, or `station_name` |
-| `found` | int | Number of valid stations found |
-| `errors` | int | Number of errors (e.g., station IDs not found) |
-| `details` | object | Metadata including best prices, timestamps, search params |
-| `stations` | array | Array of station objects with prices |
-| `last_update` | string | ISO timestamp when script executed |
-
-### Details Object
-
-| Field | Type | Always Present? | Description |
-|-------|------|-----------------|-------------|
-| `icon` | string | Yes | Material Design icon for Home Assistant |
-| `best_<fuel>` | object | If fuel found | Cheapest station for each fuel type requested |
-| `radius_miles` | float | If applicable | Search radius in miles |
-| `radius_km` | float | If applicable | Search radius in kilometers |
-| `search_pattern` | string | station_name mode | Regex pattern used for search |
-| `cache_updated` | string | Yes | When prices were last fetched from API |
-| `cache_baseline` | string | Yes | When full station list was last downloaded |
-| `newest_price` | string | If prices found | Most recent price timestamp in results |
-
-### Station Object
-
-All stations include these fields:
-
-| Field | Type | Always Present? | Description |
-|-------|------|-----------------|-------------|
-| `id` | string | Yes | Unique station identifier (hash) |
-| `name` | string | Yes | Station name |
-| `brand` | string | Yes | Brand name (e.g., "SHELL", "TESCO") |
-| `postcode` | string | Yes | UK postcode |
-| `lat` | float | Yes | Latitude |
-| `lon` | float | Yes | Longitude |
-| `distance_miles` | float | If location provided | Distance in miles from search location |
-| `distance_km` | float | If location provided | Distance in kilometers from search location |
-| `open_today` | string | If available | Today's opening hours (e.g., "06:00-22:00", "24h") |
-| `is_motorway` | boolean | Yes | True if motorway service station |
-| `is_supermarket` | boolean | Yes | True if supermarket forecourt |
-| `<fuel>_price` | float | If available | Price in pence per litre for requested fuel type |
-| `<fuel>_updated` | string | If available | ISO timestamp when this fuel price was last updated |
-
-### Timestamps Explained
-
-| Timestamp | Location | Meaning |
-|-----------|----------|---------|
-| `last_update` | Top level | When this script execution completed |
-| `cache_updated` | details | When prices were last fetched from API (hourly incremental) |
-| `cache_baseline` | details | When full station list was last downloaded (monthly) |
-| `newest_price` | details | Most recent price update timestamp across all returned stations |
-
-  > All prices are in pence per litre (142.9p = £1.429/litre) - but this is AS REPORTED by the station.
-  > It is not uncommon for stations to mistakenly input prices as 1.429/litre, the script
-  > automatically corrects these where it is obviously an input error.
-
-## Home Assistant Dashboard
-
-### Simple Markdown Card
-
-A generic example using markdown:
+Here is an example Markdown card for displaying the sensor on a dashboard:
 
 ```yaml
 type: markdown
-content: |
-  ## Fuel Prices Near Home
-  
-  **Best E10:** {{ state_attr('sensor.fuel_finder_home', 'details').best_e10.name }}
-  {{ state_attr('sensor.fuel_finder_home', 'details').best_e10.price }}p @ {{ state_attr('sensor.fuel_finder_home', 'details').best_e10.miles }} miles
-  
-  **Best Diesel:** {{ state_attr('sensor.fuel_finder_home', 'details').best_b7_standard.name }}
-  {{ state_attr('sensor.fuel_finder_home', 'details').best_b7_standard.price }}p @ {{ state_attr('sensor.fuel_finder_home', 'details').best_b7_standard.miles }} miles
-  
-  **Last updated:** {{ relative_time(strptime(state_attr('sensor.fuel_finder_home', 'last_update'), '%Y-%m-%dT%H:%M:%S.%f')) }}
-  
-  ### Nearest 5 Stations
-  {% for station in state_attr('sensor.fuel_finder_home', 'stations')[:5] %}
-  **{{ station.name }}** ({{ station.distance_miles }} mi)
-  E10: {{ station.e10_price }}p | Diesel: {{ station.b7_standard_price }}p
-  Open: {{ station.open_today or 'Unknown' }}
-  {% endfor %}
-```
-Here is a more advanced markdown display (actually the one I use which provides links to Waze for navigation from the Postcode display, the `card_mod` on the end is to remove grid lines from the table):
-```yaml
-  - type: markdown
-    title: Local Fuel Prices
-    content: >-
-      {%- if states('sensor.local_petrol_prices') | int | default(0, true) >= 1
-      -%}
-        <center>
-        <table width="100%">
-        {%- for station in
-             state_attr('sensor.local_petrol_prices', 'stations')
-             | selectattr('e10_price', 'defined')
-             | sort(attribute='e10_price')
-        -%}
-          <tr>
-            <td>{{ station.brand.split(' ')[0] | title }}, <font size=2>{{ station.name | title }}</font></td>
-            <td><a href="https://waze.com/ul?ll={{ station.lat }}%2C{{ station.lon }}&navigate=yes&zoom=17">{{ station.postcode | upper }}</a></td>
-            <td align="right">{{ station.e10_price }}p</td>
-          </tr>
-          <tr>
-            <td colspan="3"><font size=1 color="grey">Open: {{ iif(station.open_today is not none, station.open_today, "NA") }}, Dist: {{ station.distance_miles }} miles, Updated: {{ station.e10_updated | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0)}}</font></td>
-          </tr>
-        {%- endfor -%}
-        </table>
-        </center>
-        <p><font size=1 color="grey">Updated: {{ state_attr('sensor.local_petrol_prices', 'last_update') | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0)}}</font></p>
+title: E10 Fuel Prices
+content: >-
+  {%- set st = states('sensor.local_e10_prices') -%}
+  {%- set stations = state_attr('sensor.local_e10_prices', 'stations') or [] -%}
+  {%- if st == 'ok' and stations|length > 0 -%}
+    <center>
+    <table width="100%">
+    {%- for station in stations -%}
+      {%- set brand = (station.brand | string).split(' ')[0] if station.brand else '' -%}
+      {%- set name  = station.name  or '' -%}
+      {%- set loc   = station.location or {} -%}
+      {%- set lat   = loc.latitude -%}
+      {%- set lon   = loc.longitude -%}
+      {%- set pc    = loc.postcode -%}
+      {%- set e10   = station.fuel_prices.E10 -%}
+      {%- set price = e10.price -%}
+      {%- set upd   = e10.price_last_updated -%}
+      <tr>
+        <td align="center" valign="middle" width="9%">
+          <font color="green"><ha-icon icon="mdi:gas-station"></ha-icon></font>
+        </td>
+        <td width="5%"></td>
+        <td>
+          {{ name | title }}<br />
+          <font size=2 color="grey">
+            {{ (brand or 'Set') | title }}{{ ' ' }}
+            {%- if upd -%}
+              on {{ upd | as_timestamp | timestamp_custom(' %a %-d %b %H:%M', true, 0) }}
+            {%- else -%}
+              NA
+            {%- endif -%}
+          </font>
+        </td>
+        <td>
+          {%- if lat and lon and pc -%}
+            {%- set link =
+              '<a href="https://waze.com/ul?ll=' +
+              lat + '%2C' + lon + '&navigate=yes&zoom=17">' +
+              '<ha-icon icon="mdi:waze"></ha-icon>' +
+              '</a> ' + (pc | upper) -%}
+          {%- else -%}
+            {%- set link = (pc or '') | upper -%}
+          {%- endif -%}
+          {%- if link != "" -%}
+            {{ link }}{{ " " }}
+          {%- endif -%}
+        </td>
+        <td align="right">{{ price }}p</td>
+      </tr>
+    {%- endfor -%}
+    </table>
+    </center>
+    {%- set gen = state_attr('sensor.local_e10_prices', 'generated_at') -%}
+    <p><font size=1 color="grey">
+      Generated:
+      {%- if gen -%}
+        {{ gen | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0) }}
       {%- else -%}
-        <center>No Fuel Prices Available</center>
+        NA
       {%- endif -%}
-    card_mod:
-      style:
-        ha-markdown $:
-          ha-markdown-element: |
-            td {
-              border: none !important;
-              padding: 0px !important;
-            }
+    </font></p>
+  {%- else -%}
+    <center>No Fuel Prices Available</center>
+  {%- endif -%}
+card_mod:
+  style:
+    ha-markdown $:
+      ha-markdown-element: |
+        td {
+          border: none !important;
+          padding: 0px !important;
+        }
 ```
 
-### Custom Button Card
+> The `card_mod` section requires [card-mod](https://github.com/thomasloven/lovelace-card-mod) to be installed. It removes the gridlines that Home Assistant's recent updates have added to Markdown tables. Without it, the card will still work but the table styling won't be as clean.
 
-```yaml
-type: custom:button-carde
-entity: sensor.fuel_finder_home
-name: Cheapest E10
-show_state: false
-icon: mdi:gas-station
-label: |
-  [[[
-    const best = entity.attributes.details.best_e10;
-    return `${best.price}p @ ${best.name} (${best.miles} mi)`;
-  ]]]
-styles:
-  card:
-    - height: 80px
-  label:
-    - font-size: 12px
-```
+Each row shows the station name, brand, last price update time, a Waze navigation link with the postcode, and the price in pence.
 
-### Template Sensor Examples
+## Command-Line Reference
 
-```yaml
-template:
-  - sensor:
-      - name: "Cheapest E10 Price"
-        unit_of_measurement: "p"
-        state: "{{ state_attr('sensor.fuel_finder_home', 'details').best_e10.price }}"
-        
-      - name: "Cheapest E10 Station"
-        state: "{{ state_attr('sensor.fuel_finder_home', 'details').best_e10.name }}"
-        
-      - name: "Fuel Data Age"
-        state: >
-          {{ relative_time(strptime(state_attr('sensor.fuel_finder_home', 'details').cache_updated, '%Y-%m-%dT%H:%M:%S.%fZ')) }}
-```
+### Working Directory
 
-## Health Check Mode
+| Priority | Source                          | Example                               |
+|----------|---------------------------------|---------------------------------------|
+| 1        | `--config-dir /path/to/dir`     | `--config-dir /tmp/uff`               |
+| 2        | `UFF_CONFIG_DIR` env var        | `export UFF_CONFIG_DIR=/tmp/uff`      |
+| 3        | Default                         | `/config/.storage/uk_fuel_finder`     |
 
-Use `--healthcheck` for monitoring and automation:
+### Credentials
 
-```bash
-# Check cache health
-python3 uk_fuel_finder.py --healthcheck
+| Priority | Source                                  |
+|----------|-----------------------------------------|
+| 1        | `--client-id` / `--client-secret`       |
+| 2        | `config.json` in working directory      |
+| 3        | `UFF_CLIENT_ID` / `UFF_CLIENT_SECRET` env vars |
 
-# Exit codes:
-#   0 = Cache is healthy and fresh
-#   1 = Cache is stale, missing, or invalid
+### Options
 
-# Example output (healthy):
-{
-  "healthy": true,
-  "baseline_age_days": 15.2,
-  "stations_age_hours": 0.5,
-  "prices_age_hours": 0.3,
-  "total_stations": 6794,
-  "stations_with_prices": 6532
-}
+| Option              | Description                                                   |
+|---------------------|---------------------------------------------------------------|
+| `--config-dir DIR`  | Working directory for config, cache, and lock files            |
+| `--debug`           | Print diagnostic messages to stderr                           |
+| `--client-id ID`    | API client ID (overrides config file and env)                 |
+| `--client-secret S` | API client secret (overrides config file and env)             |
+| `--full-refresh`    | Invalidate the cache and rebuild from scratch                 |
+| `--health`          | Output only cache health statistics, then exit                |
+| `--no-health`       | Omit cache/health metadata from output                        |
+| `--no-stations`     | Omit the stations array from output                           |
+| `--no-best`         | Omit the `best_fuel` analysis from output                     |
+| `--lat FLOAT`       | Latitude for radius search                                    |
+| `--lon FLOAT`       | Longitude for radius search                                   |
+| `--radius-km FLOAT` | Search radius in kilometres                                   |
+| `--radius-miles FLOAT` | Search radius in miles (converted to km internally)        |
+| `--station-id ID`   | Query specific station(s) by ID (repeatable)                  |
+| `--re-name REGEX`   | Filter by station name (repeatable, case-insensitive)         |
+| `--re-brand REGEX`  | Filter by brand name (repeatable, case-insensitive)           |
+| `--re-postcode RE`  | Filter by postcode (repeatable, case-insensitive)             |
+| `--re-town REGEX`   | Filter by town/city (repeatable, case-insensitive)            |
+| `--re-id REGEX`     | Filter by station ID (repeatable, case-insensitive)           |
+| `--re-fuel REGEX`   | Filter by fuel type (repeatable, case-insensitive)            |
+| `--sort MODE`       | Sort order: `distance` (default) or `cheapest:<FUEL_TYPE>`    |
+| `--limit N`         | Maximum number of results (default: 10)                       |
 
-# Use in scripts
-if python3 uk_fuel_finder.py --healthcheck; then
-  echo "Cache is healthy"
-else
-  echo "Cache needs refresh"
-  python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --full-refresh
-fi
-```
+Regex filters are combined with AND across categories and OR within the same category. For example, `--re-brand "shell" --re-brand "bp" --re-town "london"` matches stations in London branded either Shell or BP.
 
-## Station ID Lookup
+### Working Directory Files
 
-Query specific stations by their unique ID:
+| File          | Purpose                                           |
+|---------------|---------------------------------------------------|
+| `config.json` | Optional: API credentials and tuning overrides     |
+| `state.json`  | Cache: all station and price data (~3–5 MB)        |
+| `token.json`  | OAuth access and refresh tokens                    |
+| `state.lock`  | Inter-process lock file (auto-managed)             |
 
-```bash
-# Single station
-python3 uk_fuel_finder.py --station-id abc123def456
+### Cache Timing Defaults
 
-# Multiple stations
-python3 uk_fuel_finder.py --station-id abc123,def456,ghi789
+These can be overridden in `config.json`:
 
-# With specific fuel types
-python3 uk_fuel_finder.py --station-id abc123 --fuel-types E5,B7_PREMIUM
+| Setting                        | Default | Description                                   |
+|--------------------------------|---------|-----------------------------------------------|
+| `stations_baseline_days`       | 7       | Days between full station list refreshes       |
+| `stations_incremental_hours`   | 12      | Hours between incremental station updates      |
+| `prices_baseline_days`         | 2       | Days between full price refreshes              |
+| `prices_incremental_hours`     | 1.0     | Hours between incremental price updates        |
 
-# With distance calculation (provide your location)
-python3 uk_fuel_finder.py --station-id abc123 --lat 51.5074 --lon -0.1278
+## API Documentation
 
-# Example output:
-{
-  "state": 3,
-  "mode": "station_id",
-  "found": 2,
-  "errors": 1,
-  "details": {
-    "icon": "mdi:gas-station",
-    "best_e10": {
-      "name": "Shell Example Station",
-      "postcode": "SW1A 1AA",
-      "miles": 2.3,
-      "price": 142.9
-    },
-    "cache_updated": "2026-02-05T10:00:00.000Z",
-    "newest_price": "2026-02-05T09:45:00.000Z"
-  },
-  "stations": [
-    {
-      "id": "abc123",
-      "name": "Shell Example Station",
-      "brand": "Shell",
-      "postcode": "SW1A 1AA",
-      "lat": 51.5074,
-      "lon": -0.1278,
-      "open_today": "06:00-22:00",
-      "is_motorway": false,
-      "is_supermarket": false,
-      "e10_price": 142.9,
-      "e10_updated": "2026-02-04T15:30:00Z",
-      "distance_miles": 2.3,
-      "distance_km": 3.7
-    },
-    {
-      "id": "invalid_id",
-      "error": "Station not found in cache"
-    },
-    {
-      "id": "def456",
-      "name": "Tesco Example",
-      ...
-    }
-  ],
-  "last_update": "2026-02-05T10:30:00"
-}
-```
+See [UK_Fuel_Finder_API_Spec.md](UK_Fuel_Finder_API_Spec.md) for the full API specification.
 
-**Features:**
-- `state` - Total entries returned
-- `found` - Number of successful lookups
-- `errors` - Number of stations not found
-- Optional distance calculation (provide `--lat`/`--lon`)
-- Works without radius requirement
-- Auto-populates cache on first run if needed
+## Licence
 
-## Station Name Search
+This project is licensed under the GNU General Public License v3.0 — see the [LICENCE](LICENCE) file for details.
 
-Search for stations by name, brand, or postcode within a specific radius. **Location is required** to prevent returning thousands of results.
+## Author
 
-Supports **regex patterns** for powerful searches:
+Phil Male — [https://phil-male.com](https://phil-male.com)
 
-```bash
-# Simple text search (case-insensitive)
-python3 uk_fuel_finder.py --station-name "tesco" --lat 51.5074 --lon -0.1278 --radius-miles 10
-
-# Search by brand
-python3 uk_fuel_finder.py --station-name "shell" --lat 53.8008 --lon -1.5491 --radius-miles 5
-
-# Regex: OR pattern - find Sainsbury's OR Tesco
-python3 uk_fuel_finder.py --station-name "sainsbury|tesco" --lat 55.9533 --lon -3.1883 --radius-miles 10
-
-# Search by postcode
-python3 uk_fuel_finder.py --station-name "SW1A" --lat 51.5074 --lon -0.1278 --radius-miles 5
-
-# Limit results
-python3 uk_fuel_finder.py --station-name "jet" --lat 53.8008 --lon -1.5491 --radius-miles 15 --max-stations 5
-
-# With specific fuel types
-python3 uk_fuel_finder.py --station-name "esso" --lat 51.5074 --lon -0.1278 --radius-km 10 --fuel-types E5,B7_PREMIUM
-
-# Example output:
-{
-  "state": 8,
-  "mode": "station_name",
-  "found": 8,
-  "errors": 0,
-  "details": {
-    "icon": "mdi:gas-station",
-    "best_e10": {
-      "name": "TESCO EXTRA",
-      "postcode": "SW1A 1AA",
-      "miles": 0.5,
-      "price": 139.9
-    },
-    "search_pattern": "tesco",
-    "radius_miles": 10.0,
-    "cache_updated": "2026-02-05T10:00:00.000Z",
-    "newest_price": "2026-02-05T09:45:00.000Z"
-  },
-  "stations": [
-    {
-      "id": "abc123...",
-      "name": "TESCO EXTRA",
-      "brand": "TESCO",
-      "postcode": "SW1A 1AA",
-      "lat": 51.5074,
-      "lon": -0.1278,
-      "distance_miles": 0.5,
-      "distance_km": 0.8,
-      "open_today": "06:00-23:00",
-      "is_motorway": false,
-      "is_supermarket": true,
-      "e10_price": 139.9,
-      "e10_updated": "2026-02-05T10:30:00Z",
-      "b7_standard_price": 147.9,
-      "b7_standard_updated": "2026-02-05T10:30:00Z"
-    },
-    ...
-  ],
-  "last_update": "2026-02-05T10:30:00"
-}
-```
-
-### Regex Pattern Examples
-
-| Pattern | Matches | Example |
-|---------|---------|---------|
-| `tesco` | Contains "tesco" anywhere | "TESCO EXTRA", "Tesco Express" |
-| `shell\|esso` | Contains "shell" OR "esso" | "Shell", "Esso", "Shell Express" |
-| `^jet$` | Exactly "jet" | "JET" (not "JET STOP") |
-| `SW1A\|W1` | Postcode starts with SW1A or W1 | "SW1A 1AA", "W1T 1AA" |
-| `(?!.*motorway)shell` | "shell" but not "motorway" | Exclude motorway stations |
-
-**Features:**
-- Case-insensitive regex matching
-- Searches name, brand, and postcode fields
-- **Location required** (filters to radius FIRST, then searches)
-- Sorted by distance (nearest first)
-- Use `--max-stations` to limit results
-- Auto-populates cache on first run if needed
-
-**Why location is required:** Without filtering by radius first, searching for "shell" would return 500+ stations nationwide, which is impractical and slow.
-
-## Configuration File
-
-Default location: `/config/scripts/uk_fuel_finder_config.json`
-
-```json
-{
-  "client_id": "your_client_id",
-  "client_secret": "your_client_secret",
-  "token_file": "/config/.storage/uk_fuel_finder/token.json",
-  "state_file": "/config/.storage/uk_fuel_finder/state.json",
-  "stations_baseline_days": 30,
-  "stations_incremental_hours": 1,
-  "prices_incremental_hours": 1
-}
-```
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `client_id` | string | Required | API client ID from Fuel Finder portal |
-| `client_secret` | string | Required | API client secret |
-| `token_file` | string | See above | OAuth token cache location |
-| `state_file` | string | See above | Stations/prices cache location |
-| `stations_baseline_days` | number | 30 | Full redownload interval (days) |
-| `stations_incremental_hours` | number | 1 | Station update check interval (hours) |
-| `prices_incremental_hours` | number | 1 | Price update check interval (hours) |
-
-## Troubleshooting
-
-### Cache seems stale
-
-```bash
-# Force full refresh
-python3 uk_fuel_finder.py --lat 51.5074 --lon -0.1278 --radius-miles 10 --full-refresh --debug
-```
-
-### First run is slow
-
-**Normal!** First run downloads all UK stations (~7,000 records, 3 minutes). Subsequent runs use cache (<1 second).
-
-### No stations found
-
-- Verify coordinates are correct (use [LatLong.net](https://www.latlong.net/))
-- Increase search radius (`--radius-miles 20`)
-- Check if stations exist in your area on Google Maps
-
-### API timeouts
-
-The script automatically retries with exponential backoff. If persistent:
-- Check API status at https://www.fuel-finder.service.gov.uk/
-- Try again in a few minutes
-- Use `--debug` to see detailed progress
-
-### Multiple sensors interfering
-
-File locking handles this automatically. If you still see issues, check for stale lock files:
-
-```bash
-rm /config/.storage/uk_fuel_finder/state.json.lock
-```
-
-### Authentication errors
-
-- Verify `client_id` and `client_secret` are correct
-- Ensure you're using production credentials (not test)
-- Delete token file to force fresh authentication:
-  ```bash
-  rm /config/.storage/uk_fuel_finder/token.json
-  ```
-
-## API Rate Limits
-
-- **Live environment:** 120 requests/minute, 10,000 requests/day
-- **Script efficiency:** 
-  - Baseline: ~17 requests (once per month)
-  - Incremental: ~1-3 requests (once per hour)
-  - Well under limits even with 10+ sensors
-
-## File Structure
-
-```
-/config/
-├── scripts/
-│   ├── uk_fuel_finder.py              # Main script
-│   └── uk_fuel_finder_config.json     # Configuration
-└── .storage/
-    └── uk_fuel_finder/
-        ├── token.json              # OAuth token cache
-        ├── state.json              # Stations & prices cache (~3-5MB)
-        └── state.json.lock         # Lock file (auto-cleanup)
-```
-
-## Requirements
-
-- Python 3.7+
-- UK Fuel Finder API credentials ([free registration](https://www.fuel-finder.service.gov.uk/))
-- Unix-like OS (uses `fcntl` for file locking)
-
-## Credits
-
-- Built for Home Assistant community: https://community.home-assistant.io/t/uk-fuel-finder/982348/6
-- Uses UK Government Fuel Finder API
-- API documentation: https://www.fuel-finder.service.gov.uk/
-
-## Changelog
-
-### v2.0.0 (2026-02-06)
-- **Unified output structure** across all query modes (location, station_id, station_name)
-- **Consistent station data** with all fields present (id, name, brand, postcode, lat/lon, distances, flags, fuel prices)
-- **Three timestamps:** last_update (script run), cache_updated (API fetch), newest_price (latest price change)
-- **Smart sorting:** --sort-by-price flag > location provided > alphabetical
-- **Dynamic best_<fuel> blocks** only appear when fuel type found in results
-- Refactored to shared cache architecture
-- Added incremental updates (stations + prices)
-- Added multi-sensor support with file locking
-- Added `--fuel-types` for flexible fuel tracking (E10, E5, B7_STANDARD, B7_PREMIUM, HVO, B10)
-- Added `--max-stations` to limit results
-- Added `--sort-by-price` option
-- Added `--healthcheck` mode for cache validation
-- Added `--station-id` for specific station lookups
-- Added `--station-name` for regex-based searching by name/brand/postcode (requires location)
-- Auto-populates cache on first run for all modes
-- Improved file locking with automatic cleanup
-- Fixed timezone handling in healthcheck mode
-- Fixed multi-fuel type bug (all fuel types now populate correctly)
-- Enhanced documentation with example coordinates (no personal data)
-
-### v1.0.0 (2026-02-03)
-- Initial release
-- Basic station caching
-- E10 and B7 tracking only
-- Single location support
+Created for the Home Assistant community.
