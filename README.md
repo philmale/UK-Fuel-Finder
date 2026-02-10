@@ -184,6 +184,8 @@ Restart Home Assistant and the sensor(s) will appear.
 
 Here is an example Markdown card for displaying the sensor on a dashboard:
 
+![Example markdown card](./example_markdown_card.png)
+
 ```yaml
 type: markdown
 title: E10 Fuel Prices
