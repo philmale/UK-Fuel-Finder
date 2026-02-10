@@ -311,7 +311,7 @@ Each row shows the station name, brand, last price update time, a Waze navigatio
 | `--sort MODE`       | Sort order: `distance` (default) or `cheapest:<FUEL_TYPE>`    |
 | `--limit N`         | Maximum number of results (default: 10)                       |
 
-Regex filters are combined with AND across categories and OR within the same category. For example, `--re-brand "shell" --re-brand "bp" --re-town "london"` matches stations branded either Shell or BP.
+Regex filters are combined with AND across categories and OR within the same category. For example, `--re-brand "shell" --re-brand "bp" --re-town "london"` matches stations branded either Shell or BP in London.
 
 ### Working Directory Files
 
