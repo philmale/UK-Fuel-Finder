@@ -293,6 +293,7 @@ Each row shows the station name, brand, last price update time, a Waze navigatio
 | `--client-id ID`    | API client ID (overrides config file and env)                 |
 | `--client-secret S` | API client secret (overrides config file and env)             |
 | `--full-refresh`    | Invalidate the cache and rebuild from scratch                 |
+| `--prices-refresh`  | Invalidate just the prices in the cache and rebuild           |
 | `--health`          | Output only cache health statistics, then exit                |
 | `--no-health`       | Omit cache/health metadata from output                        |
 | `--no-stations`     | Omit the stations array from output                           |

@@ -442,7 +442,16 @@ def fetch_all_batches(
             headers = {"accept": "application/json", "authorization": f"Bearer {token}"}
             resp = request_with_retry("GET", url, headers=headers, params=qp)
 
-        data = resp.json()
+        response_body = resp.json()
+        # Handle both wrapped ({'success': True, 'data': [...]}) and unwrapped ([...]) responses
+        if isinstance(response_body, dict) and 'data' in response_body:
+            data = response_body.get('data', [])
+        elif isinstance(response_body, list):
+            data = response_body
+        else:
+            debug_print(f"API response: unexpected format: {type(response_body)}")      
+            data = []
+            
         if not isinstance(data, list):
             data = []
         out.extend(data)
@@ -689,6 +698,7 @@ def ensure_cache(
     client_id: str,
     client_secret: str,
     full_refresh: bool,
+    prices_refresh: bool = False,
     stations_baseline_days: int,
     stations_incremental_hours: int,
     prices_baseline_days: int,
@@ -720,9 +730,15 @@ def ensure_cache(
 
         # --- Stations baseline (full pull, periodic) ---
         if needs_stations_baseline(state, stations_baseline_days):
+            baseline_at = state.get("meta", {}).get("stations_baseline_at")
+            dt = parse_dt_maybe(baseline_at)
+            age_days = (utc_now() - dt).days if dt else None
             debug_print(
-                f"Stations: baseline refresh required (>{stations_baseline_days}d or missing)"
-            )
+                f"Stations: baseline refresh required "
+                f"(last_baseline={baseline_at or 'never'}, "
+                f"age={age_days}d if age_days else 'never', "
+                f"threshold={stations_baseline_days}d)"
+            ) 
             items = fetch_all_batches(
                 token,
                 "/api/v1/pfs",
@@ -791,9 +807,13 @@ def ensure_cache(
             debug_print("Stations: no refresh needed")
 
         # --- Prices baseline (full pull, also forced after stations baseline) ---
-        if did_stations_baseline or needs_prices_baseline(state, prices_baseline_days):
+        if did_stations_baseline or prices_refresh or needs_prices_baseline(state, prices_baseline_days):
+            baseline_at = state.get("meta", {}).get("prices_baseline_at")
             debug_print(
-                "Prices: baseline refresh required (>{prices_baseline_days)d or missing)"
+                f"Prices: baseline refresh required "
+                f"(did_stations_baseline={did_stations_baseline}, "
+                f"last_baseline={baseline_at or 'never'}, "
+                f"threshold={prices_baseline_days}d)"
             )
             items = fetch_all_batches(
                 token,
@@ -1191,6 +1211,11 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         action="store_true",
         help="Invalidate cache and rebuild baselines",
     )
+    p.add_argument(
+        "--prices-refresh",
+        action="store_true",
+        help="Force prices baseline refresh only (keep stations cache)",
+    )
     p.add_argument("--health", action="store_true", help="Only output cache stats")
 
     # Output section inhibitors
@@ -1300,6 +1325,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             client_id=client_id,
             client_secret=client_secret,
             full_refresh=args.full_refresh,
+            prices_refresh=args.prices_refresh,
             stations_baseline_days=int(
                 cfg.get(
                     "stations_baseline_days", DEFAULTS["stations_baseline_days"]
