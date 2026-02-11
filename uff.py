@@ -97,6 +97,9 @@ BASE_URL = "https://www.fuel-finder.service.gov.uk"
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 # Configurable defaults for cache timing, HTTP behaviour, and batch pacing
+# Note at peak times the API really needs to be treated with care to avoid
+# hitting rate limits - experience shows that even 1 request per second can
+# trigger 429s, so we use a conservative default with exponential backoff and jitter.
 DEFAULTS = {
     "config_dir": "/config/.storage/uk_fuel_finder",
     "stations_baseline_days": 7,  # days between stations baseline pull
@@ -107,7 +110,7 @@ DEFAULTS = {
     "http_retries": 6,
     "http_backoff_base": 1.8,
     "http_backoff_jitter": 0.7,
-    "batch_sleep_seconds": 1.0,
+    "batch_sleep_seconds": 4.0, # Be really nice and slow getting batches
     "incremental_safety_minutes": 45,
 }
 
@@ -343,31 +346,35 @@ def get_access_token(
 
     # Try refresh token flow first if we have one
     if refresh:
-        debug_print("OAuth: refreshing access_token using refresh_token")
-        url = f"{BASE_URL}/api/v1/oauth/regenerate_access_token"
-        payload = {"client_id": client_id, "refresh_token": refresh}
-        resp = request_with_retry(
-            "POST",
-            url,
-            headers={"accept": "application/json"},
-            json_body=payload,
-        )
-        data = resp.json()
-        token_data = data.get("data", data)
+        try:
+            debug_print("OAuth: refreshing access_token using refresh_token")
+            url = f"{BASE_URL}/api/v1/oauth/regenerate_access_token"
+            payload = {"client_id": client_id, "refresh_token": refresh}
+            resp = request_with_retry(
+                "POST",
+                url,
+                headers={"accept": "application/json"},
+                json_body=payload,
+            )
+            data = resp.json()
+            token_data = data.get("data", data)
 
-        access_token = token_data["access_token"]
-        expires_in = int(token_data.get("expires_in", 3600))
+            access_token = token_data["access_token"]
+            expires_in = int(token_data.get("expires_in", 3600))
 
-        # Persist new access token, keeping existing refresh token
-        new_token = {
-            "access_token": access_token,
-            "refresh_token": refresh,
-            "expires_at": iso_utc(utc_now() + timedelta(seconds=expires_in)),
-            "token_type": token_data.get("token_type", "Bearer"),
-            "updated_at": iso_utc(utc_now()),
-        }
-        save_json(paths.token_file, new_token)
-        return access_token
+            # Persist new access token, keeping existing refresh token
+            new_token = {
+                "access_token": access_token,
+                "refresh_token": refresh,
+                "expires_at": iso_utc(utc_now() + timedelta(seconds=expires_in)),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "updated_at": iso_utc(utc_now()),
+            }
+            save_json(paths.token_file, new_token)
+            return access_token
+        except Exception as e:
+            debug_print(f"OAuth: refresh failed ({e}), falling back to full token generation")
+            # Fall through to full credential exchange below
 
     # No refresh token available; do full credential exchange
     debug_print("OAuth: generating new access_token")
@@ -686,6 +693,7 @@ def ensure_cache(
     stations_incremental_hours: int,
     prices_baseline_days: int,
     prices_incremental_hours: float,
+    batch_sleep_seconds: float = DEFAULTS["batch_sleep_seconds"],
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # Acquire exclusive lock to prevent concurrent cache writes
     with FileLock(paths.lock_file):
@@ -716,7 +724,10 @@ def ensure_cache(
                 f"Stations: baseline refresh required (>{stations_baseline_days}d or missing)"
             )
             items = fetch_all_batches(
-                token, "/api/v1/pfs", refresh_token_fn=force_refresh_access_token
+                token,
+                "/api/v1/pfs",
+                refresh_token_fn=force_refresh_access_token,
+                batch_sleep=batch_sleep_seconds,
             )
             state["stations"] = stations_to_dict(items)
             debug_print(
@@ -759,6 +770,7 @@ def ensure_cache(
                 "/api/v1/pfs",
                 params=params,
                 refresh_token_fn=force_refresh_access_token,
+                batch_sleep=batch_sleep_seconds,
             )
 
             # Merge any new/updated stations into the cache
@@ -787,6 +799,7 @@ def ensure_cache(
                 token,
                 "/api/v1/pfs/fuel-prices",
                 refresh_token_fn=force_refresh_access_token,
+                batch_sleep=batch_sleep_seconds,
             )
             prices, max_plu, fix_count = prices_to_dict(items)
             state["prices"] = prices
@@ -820,7 +833,7 @@ def ensure_cache(
 
                 debug_print(
                     f"Cache: orphan prices (no station): {len(orph_prices)}/{len(price_ids)}; "
-                    f"orphan stations (no price): {len(orph_stns) / {len(station_ids)}}"
+                    f"orphan stations (no price): {len(orph_stns)}/{len(station_ids)}"
                 )
 
                 # Remove price entries with no corresponding station
@@ -859,6 +872,7 @@ def ensure_cache(
                 "/api/v1/pfs/fuel-prices",
                 params=params,
                 refresh_token_fn=force_refresh_access_token,
+                batch_sleep=batch_sleep_seconds,
             )
             if items:
                 upd, max_plu, fix_count = prices_to_dict(items)
@@ -1304,6 +1318,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             prices_incremental_hours=float(
                 cfg.get(
                     "prices_incremental_hours", DEFAULTS["prices_incremental_hours"]
+                )
+            ),
+            batch_sleep_seconds=float(
+                cfg.get(
+                    "batch_sleep_seconds", DEFAULTS["batch_sleep_seconds"]
                 )
             ),
         )
