@@ -67,6 +67,8 @@ python3 uff.py \
 
 For scheduled use, add it to crontab and redirect the output as needed.
 
+You can also use `jq` (instructions see [jqlang.org](https://jqlang.org/tutorial//)).
+
 ## [Home Assistant](https://www.home-assistant.io/) Installation (Docker)
 
 These instructions are for [Home Assistant](https://www.home-assistant.io/) running as a Docker container. For other installation types the steps should be straightforward to adapt — the key requirements are placing the script and its config inside the `/config` tree.
@@ -131,7 +133,7 @@ python3 /config/scripts/uff.py \
   --sort "cheapest:E10" --limit 5 --debug | jq
 ```
 
-If you use `jq` you can also manipulate the resulting JSON in anyway you want.
+If you use `jq` you can also manipulate the resulting JSON in anyway you want (instructions see [jqlang.org](https://jqlang.org/tutorial//)).
 
 ### 4. Configure the Command Line Sensor
 
