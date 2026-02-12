@@ -274,7 +274,7 @@ card_mod:
         }
 ```
 
-> The `card_mod` section requires [card-mod](https://github.com/thomasloven/lovelace-card-mod) to be installed. It removes the gridlines that [Home Assistant](https://www.home-assistant.io/)'s recent updates have added to Markdown tables. Without it, the card will still work but the table styling won't be as clean 9in my opinion!)
+> The `card_mod` section requires [card-mod](https://github.com/thomasloven/lovelace-card-mod) to be installed. It removes the gridlines that [Home Assistant](https://www.home-assistant.io/)'s recent updates have added to Markdown tables. Without it, the card will still work but the table styling won't be as clean in my opinion!)
 
 Each row shows the station name, brand, last price update time, a Waze navigation link with the postcode, and the price in pence.
 
