@@ -9,7 +9,7 @@ Script can be run repeatedly, and in parallel if required.
 ## Features
 
 - **Smart caching** — baseline + incremental updates minimise API calls; the cache rebuilds itself automatically
-- **Multi-sensor safe** — file locking allows concurrent execution from multiple HA sensors without conflicts
+- **Multi-sensor safe** — file locking allows concurrent execution from multiple [Home Assistant](https://www.home-assistant.io/) sensors without conflicts
 - **Fast queries** — after initial cache build, queries complete in under a second
 - **Flexible filtering** — regex patterns for station name, brand, postcode, town, and fuel type
 - **Data cleaning** — automatically detects and corrects price entry errors (prices reported in pounds instead of pence)
@@ -17,8 +17,8 @@ Script can be run repeatedly, and in parallel if required.
 
 ## Prerequisites
 
-- Python 3.7+ (included in Home Assistant's Python environment)
-- The `requests` library (included in Home Assistant's Python environment)
+- Python 3.7+ (included in [Home Assistant](https://www.home-assistant.io/)'s Python environment)
+- The `requests` library (included in [Home Assistant](https://www.home-assistant.io/)'s Python environment)
 - API credentials from the [UK Fuel Finder service](https://www.fuel-finder.service.gov.uk/) — registration is free
 
 ## Quick Start (Standalone)
@@ -27,7 +27,7 @@ Although this was primarily written for use within a Home Assistant environment
 you can run `uff.py` anywhere Python and `requests` are available.
 It stores its cache and config in a single working directory.
 
-Detailed instriuctions on installing for Home Assistant are below, but here is a quick
+Detailed instructions on installing for [Home Assistant](https://www.home-assistant.io/) are below, but here is a quick
 guide to installing for any other environment.
 
 ```bash
@@ -67,13 +67,15 @@ python3 uff.py \
 
 For scheduled use, add it to crontab and redirect the output as needed.
 
-## Home Assistant Installation (Docker)
+## [Home Assistant](https://www.home-assistant.io/) Installation (Docker)
 
-These instructions are for Home Assistant running as a Docker container. For other installation types the steps should be straightforward to adapt — the key requirements are placing the script and its config inside the `/config` tree.
+These instructions are for [Home Assistant](https://www.home-assistant.io/) running as a Docker container. For other installation types the steps should be straightforward to adapt — the key requirements are placing the script and its config inside the `/config` tree.
+
+I've implemented this as a Python script that produces JSON output to `stdout` that can easily be loaded into [Home Assistant](https://www.home-assistant.io/)'s `command_line` sensor to minimise the amount of data held inside [Home Assistant](https://www.home-assistant.io/) and to minimise failure modes. Using a Python script means the data is loaded, processed and then removed from system memory each time a query is run, and each run is independent of the next - no harm to [Home Assistant](https://www.home-assistant.io/) possible on an ongoing basis.
 
 ### 1. Copy the Script
 
-Place `uff.py` into your Home Assistant scripts directory. If you don't already have one, create it:
+Place `uff.py` into your [Home Assistant](https://www.home-assistant.io/) scripts directory. If you don't already have one, create it:
 
 ```bash
 mkdir -p /path/to/your/ha/config/scripts
@@ -103,7 +105,7 @@ Create a `config.json` file with your API credentials:
 
 ### 3. Test from Inside the Container
 
-Open a shell inside your Home Assistant container:
+Open a shell inside your [Home Assistant](https://www.home-assistant.io/) container:
 
 ```bash
 docker exec -it homeassistant /bin/bash
@@ -121,7 +123,15 @@ python3 /config/scripts/uff.py \
 
 The first run will take a few minutes as it downloads all station and price data from the API. You will see progress in the debug output. Once complete, run it again to confirm the cache is working — the second run should complete in under a second.
 
-If you have `jq` available inside your docker container (it should be) you can pipe the output through it to view the json structure anyway you want, just add `| jq` to the end of the command line.
+If you have `jq` available inside your docker container (it should be) you can pipe the output through it to view the json structure anyway you want, just add `| jq` to the end of the command line:
+
+```bash
+python3 /config/scripts/uff.py \
+  --lat 51.5074 --lon -0.1278 --radius-miles 10 \
+  --sort "cheapest:E10" --limit 5 --debug | jq
+```
+
+If you use `jq` you can also manipulate the resulting JSON in anyway you want.
 
 ### 4. Configure the Command Line Sensor
 
@@ -178,7 +188,7 @@ You can add multiple sensors for different fuel types or locations. The file loc
       - stations
 ```
 
-Restart Home Assistant and the sensor(s) will appear.
+Restart [Home Assistant](https://www.home-assistant.io/) and the sensor(s) will appear.
 
 ### 5. Dashboard Card
 
@@ -262,7 +272,7 @@ card_mod:
         }
 ```
 
-> The `card_mod` section requires [card-mod](https://github.com/thomasloven/lovelace-card-mod) to be installed. It removes the gridlines that Home Assistant's recent updates have added to Markdown tables. Without it, the card will still work but the table styling won't be as clean.
+> The `card_mod` section requires [card-mod](https://github.com/thomasloven/lovelace-card-mod) to be installed. It removes the gridlines that [Home Assistant](https://www.home-assistant.io/)'s recent updates have added to Markdown tables. Without it, the card will still work but the table styling won't be as clean 9in my opinion!)
 
 Each row shows the station name, brand, last price update time, a Waze navigation link with the postcode, and the price in pence.
 
@@ -346,4 +356,4 @@ This project is licensed under the GNU General Public License v3.0 — see the [
 
 Phil Male — [https://phil-male.com](https://phil-male.com)
 
-Created for the Home Assistant community.
+Created for the [Home Assistant Community](https://community.home-assistant.io/t/uk-fuel-finder/982348/10).
