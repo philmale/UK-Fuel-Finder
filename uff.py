@@ -149,6 +149,58 @@ def parse_price_dt(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# --------------------- format helpers ---------------------
+
+def format_address_line(location: Dict[str, Any], station_name: str = '') -> str:
+    """Format address without postcode, handling nulls and inconsistent formatting."""
+    
+    def is_road_number(s: str) -> bool:
+        """Check if string is just a road number like A614, B1234, M62"""
+        s_clean = s.strip().upper()
+        if len(s_clean) < 2 or len(s_clean) > 6:
+            return False
+        return s_clean[0] in 'ABM' and s_clean[1:].isdigit()
+    
+    def is_postcode(s: str) -> bool:
+        """Check if string looks like a UK postcode"""
+        s_clean = s.replace(' ', '').upper()
+        return (len(s_clean) >= 5 and len(s_clean) <= 8 and 
+                any(c.isalpha() for c in s_clean) and 
+                any(c.isdigit() for c in s_clean))
+    
+    parts = []
+    addr1 = (location.get('address_line_1') or '').strip()
+    
+    if ',' in addr1 and len(addr1) > 50:
+        # Full address crammed into one field
+        chunks = [c.strip() for c in addr1.split(',') if c.strip()]
+        
+        # If station name appears in address, skip everything up to and including the name
+        if station_name:
+            name_upper = station_name.upper().strip()
+            for i, chunk in enumerate(chunks):
+                if name_upper in chunk.upper():
+                    chunks = chunks[i+1:]  # Take everything after the name
+                    break
+        
+        for chunk in chunks:
+            if is_postcode(chunk) or is_road_number(chunk):
+                continue
+            parts.append(chunk)
+            if len(parts) >= 2:
+                break
+    else:
+        # Normal multi-field address
+        for field in ['address_line_1', 'address_line_2', 'city']:
+            val = (location.get(field) or '').strip()
+            if val and val.lower() != 'null':
+                if not is_road_number(val):
+                    parts.append(val)
+                    if len(parts) >= 2:
+                        break
+    
+    return ', '.join(parts[:2]) if parts else ''
+
 # --------------------- geo helpers ---------------------
 
 
@@ -1146,6 +1198,10 @@ def query_stations(
                 "motorway_service": st.get("is_motorway_service_station"),
                 "supermarket_service": st.get("is_supermarket_service_station"),
                 "location": st.get("location"),
+                "address_display": format_address_line(
+                    st.get("location") or {}, 
+                    st.get("trading_name") or ''
+                ),
                 "fuel_types": ft,
                 "fuel_prices": price_out,
                 "distance_km": (round(d, 3) if d is not None else None),
