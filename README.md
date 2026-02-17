@@ -12,7 +12,7 @@ Script can be run repeatedly, and in parallel if required.
 - **Multi-sensor safe** — file locking allows concurrent execution from multiple [Home Assistant](https://www.home-assistant.io/) sensors without conflicts
 - **Fast queries** — after initial cache build, queries complete in under a second
 - **Flexible filtering** — regex patterns for station name, brand, postcode, town, and fuel type
-- **Data cleaning** — automatically detects and corrects price entry errors (prices reported in pounds instead of pence)
+- **Data cleaning** — automatically detects and corrects price entry errors and creates sensible local address information
 - **All fuel types** — E10, E5, B7 Standard, B7 Premium, HVO, B10
 
 ## Prerequisites
@@ -279,6 +279,8 @@ card_mod:
 Each row shows the station name, brand, last price update time, a Waze navigation link with the postcode, and the price in pence.
 
 Here is another example using the display_address field:
+
+![Example markdown card](./example_markdown_card_2.png)
 
 ```
   - type: markdown
