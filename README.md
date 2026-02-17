@@ -94,7 +94,7 @@ The script stores its cache and reads credentials from a working directory. By d
 mkdir -p /path/to/your/ha/config/.storage/uk_fuel_finder
 ```
 
-Create a `config.json` file with your API credentials:
+Create a `config.json` file with your API credentials as a minimum and any command line arguments you want to always specify (there is an [Example config](./config.json) in the repository):
 
 ```json
 {
