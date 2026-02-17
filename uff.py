@@ -85,7 +85,6 @@ DEBUG = False
 
 
 def debug_print(msg: str) -> None:
-    """Print debug messages to stderr when --debug is enabled."""
     if not DEBUG:
         return
     ts = datetime.now().strftime("%H:%M:%S")
@@ -154,39 +153,81 @@ def parse_price_dt(s: Optional[str]) -> Optional[datetime]:
 
 
 def format_address_line(location: Dict[str, Any], station_name: str = '') -> str:
-    """Format address without postcode, handling nulls and inconsistent formatting."""
-    
+    # Heuristically extract the most useful location info from the address fields,
+
+    # Generic noise words common in station names/addresses but not useful as location
+    NOISE_WORDS = {'GARAGE', 'SERVICE', 'STATION', 'SERVICES', 'FILLING', 'PETROL', 'FORECOURT'}
+
     def is_road_number(s: str) -> bool:
-        """Check if string is just a road number like A614, B1234, M62"""
         s_clean = s.strip().upper()
         if len(s_clean) < 2 or len(s_clean) > 6:
             return False
         return s_clean[0] in 'ABM' and s_clean[1:].isdigit()
-    
+
     def is_postcode(s: str) -> bool:
-        """Check if string looks like a UK postcode"""
-        s_clean = s.replace(' ', '').upper()
-        return (len(s_clean) >= 5 and len(s_clean) <= 8 and 
-                any(c.isalpha() for c in s_clean) and 
-                any(c.isdigit() for c in s_clean))
-    
+        s_clean = s.strip().replace(' ', '').upper()
+        if not (5 <= len(s_clean) <= 8):
+            return False
+        # Must end in digit-alpha-alpha (e.g. 7RP, 7DZ)
+        return s_clean[-1].isalpha() and s_clean[-2].isalpha() and s_clean[-3].isdigit()
+
+    def is_noise(s: str) -> bool:
+        words = set(s.strip().upper().split())
+        return bool(words) and words.issubset(NOISE_WORDS | {'&', 'AND', 'THE', 'LTD', 'LLP'})
+
+    def chunk_score(s: str) -> int:
+        words = s.strip().upper().split()
+        if any(w in ('ROAD', 'LANE', 'STREET', 'AVENUE', 'DRIVE', 'WAY', 'CLOSE',
+                     'GROVE', 'PLACE', 'COURT', 'PARK', 'HILL', 'GREEN') for w in words):
+            return 2  # Named road - best
+        if len(words) == 1:
+            return 1  # Single word town/city name
+        return 1      # Multi-word place name
+
     parts = []
     addr1 = (location.get('address_line_1') or '').strip()
-    
-    if ',' in addr1 and len(addr1) > 50:
+
+    if addr1.count(',') >= 2:
         # Full address crammed into one field
         chunks = [c.strip() for c in addr1.split(',') if c.strip()]
-        
-        # If station name appears in address, skip everything up to and including the name
+
+        ROAD_WORDS = {'ROAD', 'LANE', 'STREET', 'AVENUE', 'DRIVE', 'WAY', 'CLOSE',
+                      'GROVE', 'PLACE', 'COURT', 'PARK', 'HILL', 'GREEN', 'BOULEVARD'}
+
+        # Skip leading chunks that contain noise words (e.g. "TEXACO GARAGE",
+        # "J WARDLE & SON LTD") but stop as soon as we hit a road/location word.
+        while chunks:
+            chunk_words = set(chunks[0].upper().split())
+            has_noise = bool(chunk_words & (NOISE_WORDS | {'LTD', 'LLP', 'PLC'}))
+            has_road = bool(chunk_words & ROAD_WORDS)
+            if has_noise and not has_road:
+                chunks = chunks[1:]
+            else:
+                break
+
+        # If station name appears in a chunk AND that chunk is not itself a road,
+        # skip everything up to and including it. Avoids discarding roads that share
+        # words with the station name (e.g. "White Hart Lane Service Station").
         if station_name:
             name_upper = station_name.upper().strip()
+            sig_words = [w for w in name_upper.split() if w not in NOISE_WORDS and len(w) > 2]
             for i, chunk in enumerate(chunks):
-                if name_upper in chunk.upper():
-                    chunks = chunks[i+1:]  # Take everything after the name
+                chunk_upper = chunk.upper()
+                chunk_words = set(chunk_upper.split())
+                # Don't skip if this chunk is itself a road — it's useful location info
+                if chunk_words & ROAD_WORDS:
                     break
-        
+                full_match = name_upper in chunk_upper
+                word_match = sig_words and sum(
+                    1 for w in sig_words if w in chunk_upper
+                ) >= max(1, len(sig_words) // 2)
+                if full_match or word_match:
+                    chunks = chunks[i + 1:]
+                    break
+
+        # Now pick the best location chunks, skipping postcodes, road numbers, noise
         for chunk in chunks:
-            if is_postcode(chunk) or is_road_number(chunk):
+            if is_postcode(chunk) or is_road_number(chunk) or is_noise(chunk):
                 continue
             parts.append(chunk)
             if len(parts) >= 2:
@@ -196,11 +237,11 @@ def format_address_line(location: Dict[str, Any], station_name: str = '') -> str
         for field in ['address_line_1', 'address_line_2', 'city']:
             val = (location.get(field) or '').strip()
             if val and val.lower() != 'null':
-                if not is_road_number(val):
+                if not is_road_number(val) and not is_noise(val):
                     parts.append(val)
                     if len(parts) >= 2:
                         break
-    
+
     return ', '.join(parts[:2]) if parts else ''
 
 
