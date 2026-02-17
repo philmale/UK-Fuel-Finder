@@ -278,6 +278,79 @@ card_mod:
 
 Each row shows the station name, brand, last price update time, a Waze navigation link with the postcode, and the price in pence.
 
+Here is another example using the display_address field:
+
+```
+  - type: markdown
+    title: E10 Fuel Prices
+    content: >-
+      {%- set st = states('sensor.local_e10_prices') -%} {%- set stations =
+      state_attr('sensor.local_e10_prices', 'stations') or [] -%} {%- if st ==
+      'ok' and stations|length > 0 -%}
+        <center>
+        <table width="100%">
+      {%- for station in stations -%}
+        {%- set brand = (station.brand | string).split(' ')[0] if station.brand else '' -%}
+        {%- set name  = station.name  or '' -%}
+        {%- set addr  = station.address_display | title or '' -%}
+        {%- set loc   = station.location or {} -%}
+        {%- set lat   = loc.latitude -%}
+        {%- set lon   = loc.longitude -%}
+        {%- set pc    = loc.postcode -%}
+        {%- set e10   = station.fuel_prices.E10 -%}
+        {%- set price = e10.price -%}
+        {%- set upd   = e10.price_last_updated -%}
+          <tr>
+            <td align="center" valign="middle" width="9%" rowspan="2"><font color="green"><ha-icon icon="mdi:gas-station"></ha-icon></font></td>
+            <td width="5%" rowspan="2"></td>
+            <td>{{ name | title }}</td>
+            <td>
+              {%- if lat and lon and pc -%}
+                {%- set link = '<a href="https://waze.com/ul?ll=' + lat + '%2C' + lon + '&navigate=yes&zoom=17">' + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> ' + (pc | upper) -%}
+              {%- else -%}
+                {%- set link = (pc or '') | upper -%}
+              {%- endif -%}
+              {%- if link != "" -%}
+                {{ link }}
+              {%- endif -%}
+            </td>
+            <td align="right">{{ price }}p</td>
+          </tr>
+          <tr>
+            <td colspan="3">
+              <font size=2 color="grey">
+                {{ (brand or 'Set') | title }}{{ ' • ' if brand and addr else '' }}{{ addr }}
+                {%- if upd -%}
+                  {{ ' • ' }}{{ upd | as_timestamp | timestamp_custom('%-d %b %H:%M', true, 0) }}
+                {%- endif -%}
+              </font>
+            </td>
+          </tr>
+      {%- endfor -%}
+        </table>
+        </center>
+        {%- set gen = state_attr('sensor.local_e10_prices', 'generated_at') -%}
+        <p><font size=1 color="grey">
+          Generated:
+          {%- if gen -%}
+            {{ gen | as_timestamp | timestamp_custom('%a %-d %b %Y %H:%M', true, 0) }}
+          {%- else -%}
+            NA
+          {%- endif -%}
+        </font></p>
+      {%- else -%}
+        <center>No Fuel Prices Available</center>
+      {%- endif -%}
+    card_mod:
+      style:
+        ha-markdown $:
+          ha-markdown-element: |
+            td {
+              border: none !important;
+              padding: 0px !important;
+            }
+```
+
 ## Command-Line Reference
 
 ### Working Directory

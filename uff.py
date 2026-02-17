@@ -114,6 +114,7 @@ DEFAULTS = {
     "incremental_safety_minutes": 45,
 }
 
+
 # --------------------- time helpers ---------------------
 
 
@@ -150,6 +151,7 @@ def parse_price_dt(s: Optional[str]) -> Optional[datetime]:
 
 
 # --------------------- format helpers ---------------------
+
 
 def format_address_line(location: Dict[str, Any], station_name: str = '') -> str:
     """Format address without postcode, handling nulls and inconsistent formatting."""
@@ -200,6 +202,7 @@ def format_address_line(location: Dict[str, Any], station_name: str = '') -> str
                         break
     
     return ', '.join(parts[:2]) if parts else ''
+
 
 # --------------------- geo helpers ---------------------
 
@@ -501,7 +504,6 @@ def fetch_all_batches(
         elif isinstance(response_body, list):
             data = response_body
         else:
-            debug_print(f"API response: unexpected format: {type(response_body)}")      
             data = []
             
         if not isinstance(data, list):
@@ -1199,8 +1201,8 @@ def query_stations(
                 "supermarket_service": st.get("is_supermarket_service_station"),
                 "location": st.get("location"),
                 "address_display": format_address_line(
-                    st.get("location") or {}, 
-                    st.get("trading_name") or ''
+                  st.get("location") or {}, 
+                  st.get("trading_name") or ''
                 ),
                 "fuel_types": ft,
                 "fuel_prices": price_out,
