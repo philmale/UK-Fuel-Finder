@@ -278,7 +278,7 @@ card_mod:
 
 Each row shows the station name, brand, last price update time, a Waze navigation link with the postcode, and the price in pence.
 
-Here is another example using the display_address field:
+Here is another example using the address_display field:
 
 ![Example markdown card](./example_markdown_card_2.png)
 
