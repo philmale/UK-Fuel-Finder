@@ -525,6 +525,13 @@ def request_with_retry(
             if resp.status_code in (401, 403):
                 raise AuthError(f"Auth HTTP {resp.status_code}", response=resp)
 
+            # 404 is not retryable; raise immediately so callers can handle it
+            # (e.g. fetch_all_batches treats it as clean end-of-pagination)
+            if resp.status_code == 404:
+                raise requests.HTTPError(
+                    f"HTTP 404 Not Found", response=resp
+                )
+
             # Server errors and rate limits get exponential backoff
             if resp.status_code in RETRYABLE_STATUS:
                 raise requests.HTTPError(
@@ -535,6 +542,11 @@ def request_with_retry(
         except Exception as e:
             # Auth errors propagate immediately without retry
             if isinstance(e, AuthError):
+                raise
+
+            # 404 propagates immediately — retrying a missing resource is pointless,
+            # and fetch_all_batches needs to catch it as end-of-pagination
+            if isinstance(e, requests.HTTPError) and getattr(getattr(e, "response", None), "status_code", None) == 404:
                 raise
 
             last_exc = e
@@ -795,6 +807,13 @@ def fetch_all_batches(
             token = refresh_token_fn()  # obtain new access token
             headers = {"accept": "application/json", "authorization": f"Bearer {token}"}
             resp = request_with_retry("GET", url, headers=headers, params=qp)
+        except requests.HTTPError as e:
+            # API now returns 404 for an out-of-range batch number, which means
+            # we have already consumed all available pages — treat as clean end-of-results.
+            if getattr(e.response, "status_code", None) == 404:
+                debug_print(f"  batch {batch}: 404 received — end of results")
+                break
+            raise
 
         response_body = resp.json()
         # Handle both wrapped ({'success': True, 'data': [...]}) and unwrapped ([...]) responses
@@ -1034,19 +1053,27 @@ def prices_to_dict(
     incremental cursor for subsequent fetches) and counts any price-entry
     corrections applied.
 
+    The cursor high-water mark is the later of ``price_last_updated`` and
+    ``price_change_effective_timestamp`` for each row, capped at the current
+    wall-clock time.  This ensures that pre-announced future price changes do
+    not advance the cursor beyond now and cause data gaps on the next incremental
+    fetch.
+
     Args:
         items: Raw list of price records from the API, each containing a
                node_id and a fuel_prices list.
 
     Returns:
         A three-tuple of:
-        - prices dict: str(node_id) -> {fuel_type -> {price, price_last_updated}}
-        - max_price_last_updated: ISO UTC string of the newest price timestamp,
+        - prices dict: str(node_id) -> {fuel_type -> {price, price_last_updated,
+          price_change_effective_timestamp}}
+        - max_price_last_updated: ISO UTC string of the newest cursor timestamp,
           or None if no valid timestamps were found.
         - fix_count: number of pound-to-pence corrections applied.
     """
     out: Dict[str, Dict[str, Any]] = {}
     max_dt: Optional[datetime] = None
+    now = utc_now()
     fix_count = 0
 
     for it in items:
@@ -1069,6 +1096,7 @@ def prices_to_dict(
 
             price_raw = row.get("price")
             plu = row.get("price_last_updated")
+            pcet = row.get("price_change_effective_timestamp")
 
             # Apply pound-to-pence correction if needed
             price, fixed = _price_fix_to_pence(price_raw)
@@ -1079,12 +1107,23 @@ def prices_to_dict(
                     f"for {ft} at station {sid[:8]}..."
                 )
 
-            per_station[ft] = {"price": price, "price_last_updated": plu}
+            per_station[ft] = {
+                "price": price,
+                "price_last_updated": plu,
+                "price_change_effective_timestamp": pcet,
+            }
 
-            # Advance the cursor to the newest price timestamp seen so far
-            dt = parse_price_dt(plu)
-            if dt and (max_dt is None or dt > max_dt):
-                max_dt = dt
+            # Use the later of price_last_updated and price_change_effective_timestamp
+            # as the cursor contribution for this row, but cap at wall-clock time so
+            # that pre-announced future prices do not push the cursor ahead of now
+            # and create a gap in the next incremental fetch.
+            dt_plu = parse_price_dt(plu)
+            dt_pcet = parse_price_dt(pcet)
+            candidates = [t for t in (dt_plu, dt_pcet) if t is not None]
+            row_dt = min(max(candidates), now) if candidates else None
+
+            if row_dt and (max_dt is None or row_dt > max_dt):
+                max_dt = row_dt
         out[sid] = per_station
 
     return out, (iso_utc(max_dt) if max_dt else None), fix_count

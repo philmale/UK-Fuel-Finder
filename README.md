@@ -357,6 +357,81 @@ Here is another example using the address_display field:
             }
 ```
 
+## Troubleshooting
+
+The paths in here are assuming you have installed inside [Home Assistant](https://www.home-assistant.io/), if you have installed the script in another way
+adjust the paths accordingly.
+
+### Diagnosing Problems
+
+Always add `--debug` first — it shows exactly what the cache is doing and where any failure occurs:
+
+```bash
+python3 /config/scripts/uff.py \
+  --lat 51.5074 --lon -0.1278 --radius-miles 10 \
+  --sort "cheapest:E10" --limit 5 --debug
+```
+
+To check cache health without running a query:
+
+```bash
+python3 /config/scripts/uff.py --health --debug
+```
+
+### Cache Out of Sync
+
+If query results look stale, incomplete, or you are seeing unexpected errors, the cache may have become corrupted or got out of sync with the API — for example if a baseline download was interrupted mid-way through.
+
+**Step 1 — Force a full cache rebuild:**
+
+```bash
+python3 /config/scripts/uff.py \
+  --lat 51.5074 --lon -0.1278 --radius-miles 10 \
+  --sort "cheapest:E10" --limit 5 --debug --full-refresh
+```
+
+`--full-refresh` wipes `state.json` and re-downloads all station and price data from scratch. This takes a few minutes but leaves the cache in a clean, consistent state.
+
+**Step 2 — If `--full-refresh` doesn't help, delete `state.json` manually:**
+
+```bash
+rm /config/.storage/uk_fuel_finder/state.json
+```
+
+Then run the script normally — it will detect the missing cache file and rebuild automatically.
+
+**Step 3 — If authentication errors persist, delete `token.json`:**
+
+```bash
+rm /config/.storage/uk_fuel_finder/token.json
+```
+
+The script will perform a fresh OAuth credential exchange on the next run.
+
+### Prices Only Out of Date
+
+If station data looks correct but prices seem stale, use `--prices-refresh` to rebuild just the prices without touching the station cache:
+
+```bash
+python3 /config/scripts/uff.py \
+  --lat 51.5074 --lon -0.1278 --radius-miles 10 \
+  --sort "cheapest:E10" --limit 5 --debug --prices-refresh
+```
+
+### Slow First Run / API Rate Limits
+
+The initial baseline download fetches all ~7,000 stations and prices in batches of 500, with a 4-second pause between each batch to stay within the API's rate limits. This is expected behaviour and typically takes 3–5 minutes. Subsequent runs are near-instant as they only fetch incremental changes.
+
+If you see repeated HTTP 429 errors in the debug output, the API is rate-limiting requests. The script will retry automatically with exponential backoff — just let it run.
+
+### Lock File Left Behind
+
+If the script is killed mid-run, it may leave `state.lock` behind. This is harmless — the lock is advisory and will be re-acquired cleanly on the next run. If you suspect a stale lock is causing hangs, it is safe to delete it:
+
+```bash
+rm /config/.storage/uk_fuel_finder/state.lock
+```
+
 ## Command-Line Reference
 
 ### Working Directory
