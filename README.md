@@ -125,7 +125,7 @@ python3 /config/scripts/uff.py \
 
 The first run will take a few minutes as it downloads all station and price data from the API. You will see progress in the debug output. Once complete, run it again to confirm the cache is working — the second run should complete in under a second.
 
-If you have `jq` available inside your docker container (it should be) you can pipe the output through it to view the json structure anyway you want, just add `| jq` to the end of the command line:
+If you have `jq` available inside your docker container (it should be) you can pipe the output through it to view the json structure, just add `| jq` to the end of the command line:
 
 ```bash
 python3 /config/scripts/uff.py \
@@ -133,7 +133,11 @@ python3 /config/scripts/uff.py \
   --sort "cheapest:E10" --limit 5 --debug | jq
 ```
 
-If you use `jq` you can also manipulate the resulting JSON in anyway you want (instructions see [jqlang.org](https://jqlang.org/tutorial//)).
+If you use `jq` you can also manipulate the resulting JSON in anyway you want (instructions see [jqlang.org](https://jqlang.org/tutorial//)), but as an example of what is possible try this from inside the docker container:
+
+```
+python3 /config/scripts/uff.py --lat 51.5074 --lon -0.1278 --radius-miles 8 --sort "cheapest:E10" --limit 5 --no-best --debug | jq -c --arg ts "$ts" '{ ts:$ts, prices_last_incremental_at:.cache.prices_last_incremental_at, prices_max_price_last_updated:.cache.prices_max_price_last_updated, price_fix_last_run_at:.cache.price_fix_last_run_at, price_fix_count_last_run:.cache.price_fix_count_last_run, stations:[ .stations[] | {name, e10_price:.fuel_prices.E10.price, e10_updated:.fuel_prices.E10.price_last_updated} ] }'
+```
 
 ### 4. Configure the Command Line Sensor
 
