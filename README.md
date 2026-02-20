@@ -241,7 +241,7 @@ content: >-
           {%- if lat and lon and pc -%}
             {%- set link =
               '<a href="https://waze.com/ul?ll=' +
-              lat + '%2C' + lon + '&navigate=yes&zoom=17">' +
+              (lat | string) + '%2C' + (lon | string) + '&navigate=yes&zoom=17">' +
               '<ha-icon icon="mdi:waze"></ha-icon>' +
               '</a> ' + (pc | upper) -%}
           {%- else -%}
@@ -312,7 +312,10 @@ Here is another example using the address_display field:
             <td>{{ name | title }}</td>
             <td>
               {%- if lat and lon and pc -%}
-                {%- set link = '<a href="https://waze.com/ul?ll=' + lat + '%2C' + lon + '&navigate=yes&zoom=17">' + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> ' + (pc | upper) -%}
+                {%- set link = '<a href="https://waze.com/ul?ll=' + (lat | string) + '%2C'
+                  + (lon | string) + '&navigate=yes&zoom=17">'
+                  + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> '
+                  + (pc | upper) -%}
               {%- else -%}
                 {%- set link = (pc or '') | upper -%}
               {%- endif -%}
