@@ -1,6 +1,8 @@
-# UK Fuel Finder API Specification v1.0
+# UK Fuel Finder API Specification v1.2
 
-This is the API specification that uff.py follows. It is not an official document - for that refer to the UK Government official web pages. However, this is my view of the specifiction.
+Last Updated: 26 Feb 2026
+
+This is the API specification that uff.py follows. It is not an official document - for that refer to the UK Government official web pages. However, this is my view of the specifiction as it stands as of the last updated date.
 
 **Base URL:** `https://www.fuel-finder.service.gov.uk`
 
