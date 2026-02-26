@@ -1,6 +1,6 @@
-# UK Fuel Finder API Specification v1.1
+# UK Fuel Finder API Specification v1.0
 
-This is the API specification that uff.py follows. It is not an official document - for that refer to the UK Government official web pages. However, this is my view of the specifiction as it stands as of 18 February 2026.
+This is the API specification that uff.py follows. It is not an official document - for that refer to the UK Government official web pages. However, this is my view of the specifiction.
 
 **Base URL:** `https://www.fuel-finder.service.gov.uk`
 
@@ -133,7 +133,7 @@ Response schema is identical to [1.1 Generate Access Token](#11-generate-access-
 
 APIs to fetch fuel prices and PFS (Petrol Fuel Station) information. All endpoints require OAuth2 Bearer token authentication.
 
-**Pagination:** Each API response returns data for up to **500** records per batch. Increment the `batch-number` query parameter to retrieve subsequent pages. A response containing fewer than 500 records indicates the final batch. An invalid `batch-number` returns HTTP `404`, which should also be treated as end-of-results.
+**Pagination:** Each API response returns data for up to **500** records per batch. Increment the `batch-number` query parameter to retrieve subsequent pages. A response containing fewer than 500 records indicates the final batch.
 
 **Common authorisation header:**
 
@@ -159,33 +159,29 @@ GET /api/v1/pfs/fuel-prices?batch-number={n}
 
 #### Response — `200` Fuel prices fetched successfully
 
-Returns a bare JSON array of station price objects (no `success` or `message` envelope):
+Returns a JSON array of station price objects:
 
 ```json
 [
   {
     "node_id": "0028acef5f3afc41c7e7d56fb285a940dfb64d6fea01cb4accd79c148321112d",
-    "mft_organisation_name": "789 LTD",
     "public_phone_number": null,
     "trading_name": "FORECOURT 4",
     "fuel_prices": [
       {
         "price": null,
         "fuel_type": "B10",
-        "price_last_updated": null,
-        "price_change_effective_timestamp": null
+        "price_last_updated": null
       },
       {
         "price": "0120.0000",
         "fuel_type": "E10",
-        "price_last_updated": "2025-12-31T08:15:23",
-        "price_change_effective_timestamp": "2026-01-01T00:00:00"
+        "price_last_updated": "2025-12-31T08:15:23"
       },
       {
         "price": "0235.9000",
         "fuel_type": "B7_STANDARD",
-        "price_last_updated": "2025-12-31T13:16:29",
-        "price_change_effective_timestamp": "2025-12-31T13:16:29"
+        "price_last_updated": "2025-12-31T13:16:29"
       }
     ]
   }
@@ -197,14 +193,12 @@ Returns a bare JSON array of station price objects (no `success` or `message` en
 | Field                      | Type         | Description                                               |
 |----------------------------|--------------|-----------------------------------------------------------|
 | `node_id`                  | string       | Unique station identifier (SHA-256 hash)                  |
-| `mft_organisation_name`    | string       | Registered organisation name                              |
 | `public_phone_number`      | string\|null | Public contact number                                     |
 | `trading_name`             | string       | Station trading name                                      |
 | `fuel_prices`              | array        | Array of fuel price entries for this station               |
 | `fuel_prices[].price`      | string\|null | Price in pence as a decimal string (e.g. `"0120.0000"` = 120.0p), or `null` if unavailable |
 | `fuel_prices[].fuel_type`  | string       | Fuel type identifier (see [Fuel Types](#fuel-types))      |
 | `fuel_prices[].price_last_updated` | string\|null | ISO 8601 datetime of last price update (no timezone; treat as UTC), or `null` |
-| `fuel_prices[].price_change_effective_timestamp` | string\|null | ISO 8601 datetime when the price change takes effect (no timezone; treat as UTC), or `null`. May be in the future for pre-announced changes. |
 
 #### Error Responses
 
@@ -216,10 +210,6 @@ Returns a bare JSON array of station price objects (no `success` or `message` en
   "message": "Invalid API key or missing authentication header."
 }
 ```
-
-**`404` — Invalid batch number**
-
-Returned when the `batch-number` parameter is out of range. Consumers should treat this as end-of-results.
 
 **`500` — Internal server error**
 
@@ -280,13 +270,12 @@ GET /api/v1/pfs?batch-number={n}
 
 #### Response — `200` PFS info fetched successfully
 
-Returns a bare JSON array of station objects (no `success` or `message` envelope):
+Returns a JSON array of station objects:
 
 ```json
 [
   {
     "node_id": "9b275ab576eeba3c6677984be15ee22a74e54fdfe8e5ea700e84a03178dc4ac1",
-    "mft_organisation_name": "USERM123",
     "public_phone_number": null,
     "trading_name": "TEST",
     "is_same_trading_and_brand_name": true,
@@ -303,8 +292,8 @@ Returns a bare JSON array of station objects (no `success` or `message` envelope
       "country": "England",
       "county": null,
       "postcode": "SL6 0AA",
-      "latitude": 51.5268585,
-      "longitude": -0.7003610
+      "latitude": "51.5268585",
+      "longitude": "-0.7003610"
     },
     "amenities": [
       "water_filling"
@@ -339,7 +328,6 @@ Returns a bare JSON array of station objects (no `success` or `message` envelope
 | Field                              | Type         | Description                                     |
 |------------------------------------|--------------|-------------------------------------------------|
 | `node_id`                          | string       | Unique station identifier (SHA-256 hash)        |
-| `mft_organisation_name`            | string       | Registered organisation name                    |
 | `public_phone_number`              | string\|null | Public contact number                           |
 | `trading_name`                     | string       | Station trading name                            |
 | `is_same_trading_and_brand_name`   | boolean      | Whether trading and brand names match           |
@@ -364,8 +352,8 @@ Returns a bare JSON array of station objects (no `success` or `message` envelope
 | `country`       | string       | Country (e.g. `"England"`)           |
 | `county`        | string\|null | County                               |
 | `postcode`      | string       | UK postcode                          |
-| `latitude`      | double       | Latitude as a double-precision float |
-| `longitude`     | double       | Longitude as a double-precision float|
+| `latitude`      | string       | Latitude as decimal string           |
+| `longitude`     | string       | Longitude as decimal string          |
 
 #### Opening Times Object
 
@@ -451,8 +439,6 @@ Prices are returned as decimal strings in pence (e.g. `"0120.0000"` = 120.0 penc
 All timestamps in price data use the format `YYYY-MM-DDTHH:MM:SS` with no timezone indicator. Treat as UTC.
 
 The `effective-start-timestamp` query parameter uses the format `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`).
-
-`price_change_effective_timestamp` follows the same `YYYY-MM-DDTHH:MM:SS` format. It may be in the future for pre-announced price changes. Consumers using this field as a pagination cursor should cap it at the current wall-clock time to avoid creating gaps in subsequent incremental fetches.
 
 ### Endpoint Summary
 
