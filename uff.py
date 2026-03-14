@@ -119,6 +119,8 @@ DEFAULTS = {
     "http_backoff_jitter": 0.7,
     "batch_sleep_seconds": 4.0,        # pause between API batch pages; be conservative
     "incremental_safety_minutes": 45,  # overlap window to catch late-arriving data
+    "prices_min_coverage_ratio": 0.5,  # reject a prices baseline if it covers fewer than
+                                       # this fraction of known stations (API degradation guard)
 }
 
 
@@ -1232,6 +1234,7 @@ def ensure_cache(
     prices_baseline_days: int,
     prices_incremental_hours: float,
     batch_sleep_seconds: float = DEFAULTS["batch_sleep_seconds"],
+    prices_min_coverage_ratio: float = DEFAULTS["prices_min_coverage_ratio"],
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Ensure the local cache is up to date, fetching from the API as needed.
 
@@ -1250,20 +1253,27 @@ def ensure_cache(
     A new stations baseline always triggers a prices baseline too, to keep
     the two datasets in sync and prune orphaned price entries.
 
+    If a prices baseline returns fewer rows than ``prices_min_coverage_ratio``
+    of the known station count, it is treated as a degraded API response.
+    The existing prices cache is preserved and the baseline timestamps are
+    not updated, so the next scheduled run will retry automatically.
+
     The entire update is wrapped in an exclusive file lock to prevent two
     concurrent HA sensor processes from corrupting the cache.
 
     Args:
-        paths:                    Resolved file paths.
-        client_id:                API OAuth client ID.
-        client_secret:            API OAuth client secret.
-        full_refresh:             If True, wipe cache and rebuild from scratch.
-        prices_refresh:           If True, force a prices baseline only.
-        stations_baseline_days:   Days between stations full pulls.
+        paths:                      Resolved file paths.
+        client_id:                  API OAuth client ID.
+        client_secret:              API OAuth client secret.
+        full_refresh:               If True, wipe cache and rebuild from scratch.
+        prices_refresh:             If True, force a prices baseline only.
+        stations_baseline_days:     Days between stations full pulls.
         stations_incremental_hours: Hours between stations incremental pulls.
-        prices_baseline_days:     Days between prices full pulls.
-        prices_incremental_hours: Hours between prices incremental pulls.
-        batch_sleep_seconds:      Pause between API batch pages.
+        prices_baseline_days:       Days between prices full pulls.
+        prices_incremental_hours:   Hours between prices incremental pulls.
+        batch_sleep_seconds:        Pause between API batch pages.
+        prices_min_coverage_ratio:  Minimum fraction of stations that must have
+                                    prices for a baseline to be accepted.
 
     Returns:
         A tuple of (state dict, cache_stats dict).  The stats dict includes
@@ -1390,59 +1400,77 @@ def ensure_cache(
                 batch_sleep=batch_sleep_seconds,
             )
             prices, max_plu, fix_count = prices_to_dict(items)
-            state["prices"] = prices
-            debug_print(
-                f"Prices: baseline loaded {len(items)} rows; "
-                f"prices now {len(state['prices'])}; max_plu={max_plu}; fixes={fix_count}"
-            )
-            now = iso_utc(utc_now())
-            state["meta"]["prices_baseline_at"] = now
-            # Use the newest price timestamp as the incremental cursor so the
-            # next incremental pull only fetches prices changed after baseline
-            state["meta"]["prices_last_incremental_at"] = max_plu or now
-            debug_print(
-                f"Prices: cursor advanced to {state['meta']['prices_last_incremental_at']}"
-            )
-            state["meta"]["prices_max_price_last_updated"] = max_plu
 
-            # Update price-fix counters
-            state["meta"]["price_fix_count_last_run"] = int(fix_count)
-            state["meta"]["price_fix_count_total"] = int(
-                state["meta"].get("price_fix_count_total") or 0
-            ) + int(fix_count)
-            state["meta"]["price_fix_last_run_at"] = iso_utc(utc_now())
-
-            # After a stations baseline, prune price entries for stations that
-            # no longer exist in the API (avoids stale data in query results)
-            if did_stations_baseline:
-                station_ids = set((state.get("stations") or {}).keys())
-                price_ids = set((state.get("prices") or {}).keys())
-
-                orph_prices = sorted(price_ids - station_ids)
-                orph_stns = sorted(station_ids - price_ids)
-
+            # Guard against degraded API responses: if the baseline covers fewer
+            # stations than the minimum coverage ratio, discard it and keep the
+            # existing cache intact.  The baseline timestamps are not updated so
+            # the next scheduled run will retry automatically.
+            station_count = len(state.get("stations") or {})
+            min_expected = int(station_count * prices_min_coverage_ratio)
+            if station_count > 0 and len(prices) < min_expected:
                 debug_print(
-                    f"Cache: orphan prices (no station): {len(orph_prices)}/{len(price_ids)}; "
-                    f"orphan stations (no price): {len(orph_stns)}/{len(station_ids)}"
+                    f"Prices: baseline REJECTED — only {len(prices)} stations priced "
+                    f"vs {station_count} known ({len(prices)/station_count:.0%}), "
+                    f"threshold={prices_min_coverage_ratio:.0%}. "
+                    f"Keeping existing cache; will retry on next run."
                 )
+                # Skip all state updates for this baseline attempt
+                # did_stations_baseline remains True so the caller knows a
+                # stations baseline ran, but prices are intentionally stale.
+            else:
+                state["prices"] = prices
+                debug_print(
+                    f"Prices: baseline accepted {len(items)} rows; "
+                    f"prices now {len(state['prices'])}; max_plu={max_plu}; fixes={fix_count}"
+                )
+                now = iso_utc(utc_now())
+                state["meta"]["prices_baseline_at"] = now
+                # Use the newest price timestamp as the incremental cursor so the
+                # next incremental pull only fetches prices changed after baseline
+                state["meta"]["prices_last_incremental_at"] = max_plu or now
+                debug_print(
+                    f"Prices: cursor advanced to {state['meta']['prices_last_incremental_at']}"
+                )
+                state["meta"]["prices_max_price_last_updated"] = max_plu
 
-                # Remove price entries with no matching station record
-                if orph_prices:
-                    for sid in orph_prices:
-                        del state["prices"][sid]
+                # Update price-fix counters
+                state["meta"]["price_fix_count_last_run"] = int(fix_count)
+                state["meta"]["price_fix_count_total"] = int(
+                    state["meta"].get("price_fix_count_total") or 0
+                ) + int(fix_count)
+                state["meta"]["price_fix_last_run_at"] = iso_utc(utc_now())
+
+                # After a stations baseline, prune price entries for stations that
+                # no longer exist in the API (avoids stale data in query results)
+                if did_stations_baseline:
+                    station_ids = set((state.get("stations") or {}).keys())
+                    price_ids = set((state.get("prices") or {}).keys())
+
+                    orph_prices = sorted(price_ids - station_ids)
+                    orph_stns = sorted(station_ids - price_ids)
+
                     debug_print(
-                        f"Cache: pruned {len(orph_prices)} orphan price entries"
+                        f"Cache: orphan prices (no station): {len(orph_prices)}/{len(price_ids)}; "
+                        f"orphan stations (no price): {len(orph_stns)}/{len(station_ids)}"
                     )
-                # Leave orphan stations intact; their prices may arrive in the
-                # next incremental pull if the API has a processing delay.
-                # (Commented-out block retained for reference only)
-                # if orph_stns:
-                #    for sid in orph_stns:
-                #        del state["stations"][sid]
-                #    debug_print(f"Cache: pruned {len(orph_stns)} orphan station entries")
-                debug_print(
-                    f"Cache: leaving {len(orph_stns)} orphan station entries to await prices"
-                )
+
+                    # Remove price entries with no matching station record
+                    if orph_prices:
+                        for sid in orph_prices:
+                            del state["prices"][sid]
+                        debug_print(
+                            f"Cache: pruned {len(orph_prices)} orphan price entries"
+                        )
+                    # Leave orphan stations intact; their prices may arrive in the
+                    # next incremental pull if the API has a processing delay.
+                    # (Commented-out block retained for reference only)
+                    # if orph_stns:
+                    #    for sid in orph_stns:
+                    #        del state["stations"][sid]
+                    #    debug_print(f"Cache: pruned {len(orph_stns)} orphan station entries")
+                    debug_print(
+                        f"Cache: leaving {len(orph_stns)} orphan station entries to await prices"
+                    )
 
         # --- Prices incremental (delta since last pull with safety overlap) ---
         elif needs_prices_incremental(state, prices_incremental_hours):
@@ -2051,6 +2079,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             ),
             batch_sleep_seconds=float(
                 cfg.get("batch_sleep_seconds", DEFAULTS["batch_sleep_seconds"])
+            ),
+            prices_min_coverage_ratio=float(
+                cfg.get("prices_min_coverage_ratio", DEFAULTS["prices_min_coverage_ratio"])
             ),
         )
     except Exception as e:

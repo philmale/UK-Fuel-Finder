@@ -241,7 +241,7 @@ content: >-
           {%- if lat and lon and pc -%}
             {%- set link =
               '<a href="https://waze.com/ul?ll=' +
-              (lat | string) + '%2C' + (lon | string) + '&navigate=yes&zoom=17">' +
+              lat + '%2C' + lon + '&navigate=yes&zoom=17">' +
               '<ha-icon icon="mdi:waze"></ha-icon>' +
               '</a> ' + (pc | upper) -%}
           {%- else -%}
@@ -312,10 +312,7 @@ Here is another example using the address_display field:
             <td>{{ name | title }}</td>
             <td>
               {%- if lat and lon and pc -%}
-                {%- set link = '<a href="https://waze.com/ul?ll=' + (lat | string) + '%2C'
-                  + (lon | string) + '&navigate=yes&zoom=17">'
-                  + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> '
-                  + (pc | upper) -%}
+                {%- set link = '<a href="https://waze.com/ul?ll=' + lat + '%2C' + lon + '&navigate=yes&zoom=17">' + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> ' + (pc | upper) -%}
               {%- else -%}
                 {%- set link = (pc or '') | upper -%}
               {%- endif -%}
@@ -362,8 +359,7 @@ Here is another example using the address_display field:
 
 ## Troubleshooting
 
-The paths in here are assuming you have installed inside [Home Assistant](https://www.home-assistant.io/), if you have installed the script in another way
-adjust the paths accordingly.
+The paths in here are assuming you have installed inside [Home Assistant](https://www.home-assistant.io/), if you have installed the script in another way adjust the paths accordingly.
 
 ### Diagnosing Problems
 
@@ -413,12 +409,22 @@ The script will perform a fresh OAuth credential exchange on the next run.
 
 ### Prices Only Out of Date
 
-If station data looks correct but prices seem stale, use `--prices-refresh` to rebuild just the prices without touching the station cache:
+The script automatically detects degraded API responses: if a prices baseline covers fewer than 50% of known stations it is silently rejected and the existing cache is preserved. The next scheduled run will retry automatically, so in many cases no manual intervention is needed — check the `--health` output and wait for the next run.
+
+If prices remain stale after several cycles, use `--prices-refresh` to force an immediate retry:
 
 ```bash
 python3 /config/scripts/uff.py \
   --lat 51.5074 --lon -0.1278 --radius-miles 10 \
   --sort "cheapest:E10" --limit 5 --debug --prices-refresh
+```
+
+If the API is consistently returning partial data, you can lower the rejection threshold in `config.json`:
+
+```json
+{
+  "prices_min_coverage_ratio": 0.25
+}
 ```
 
 ### Slow First Run / API Rate Limits
@@ -429,7 +435,7 @@ If you see repeated HTTP 429 errors in the debug output, the API is rate-limitin
 
 ### Lock File Left Behind
 
-If the script is killed mid-run, it may leave `state.lock` behind. This is harmless — the lock is advisory and will be re-acquired cleanly on the next run. If you suspect a stale lock is causing hangs, it is safe to delete it:
+If the script is killed mid-run (e.g. by a Home Assistant restart), it may leave `state.lock` behind. This is harmless — the lock is advisory and will be re-acquired cleanly on the next run. If you suspect a stale lock is causing hangs, it is safe to delete it:
 
 ```bash
 rm /config/.storage/uk_fuel_finder/state.lock
@@ -502,6 +508,7 @@ These can be overridden in `config.json`:
 | `stations_incremental_hours`   | 12      | Hours between incremental station updates      |
 | `prices_baseline_days`         | 2       | Days between full price refreshes              |
 | `prices_incremental_hours`     | 1.0     | Hours between incremental price updates        |
+| `prices_min_coverage_ratio`    | 0.5     | Minimum fraction of known stations that must have prices for a baseline to be accepted. If the API returns fewer, the existing cache is kept and the next run retries. |
 
 ## API Documentation
 
