@@ -218,9 +218,9 @@ content: >-
       {%- set lat   = loc.latitude -%}
       {%- set lon   = loc.longitude -%}
       {%- set pc    = loc.postcode -%}
-      {%- set e10   = station.fuel_prices.E10 -%}
-      {%- set price = e10.price -%}
-      {%- set upd   = e10.price_last_updated -%}
+      {%- set e10 = station.fuel_prices.get('E10', {}) -%}
+      {%- set price = e10.get('price') -%}
+      {%- set upd   = e10.get('price_last_updated') -%}
       <tr>
         <td align="center" valign="middle" width="9%">
           <font color="green"><ha-icon icon="mdi:gas-station"></ha-icon></font>
@@ -251,7 +251,7 @@ content: >-
             {{ link }}{{ " " }}
           {%- endif -%}
         </td>
-        <td align="right">{{ price }}p</td>
+        <td align="right">{{ price ~ 'p' if price else '—' }}</td>
       </tr>
     {%- endfor -%}
     </table>
@@ -303,24 +303,23 @@ Here is another example using the address_display field:
         {%- set lat   = loc.latitude -%}
         {%- set lon   = loc.longitude -%}
         {%- set pc    = loc.postcode -%}
-        {%- set e10   = station.fuel_prices.E10 -%}
-        {%- set price = e10.price -%}
-        {%- set upd   = e10.price_last_updated -%}
+        {%- set e10 = station.fuel_prices.get('E10', {}) -%}
+        {%- set price = e10.get('price') -%}
+        {%- set upd   = e10.get('price_last_updated') -%}
           <tr>
             <td align="center" valign="middle" width="9%" rowspan="2"><font color="green"><ha-icon icon="mdi:gas-station"></ha-icon></font></td>
             <td width="5%" rowspan="2"></td>
             <td>{{ name | title }}</td>
-            <td>
+            <td align="left">
               {%- if lat and lon and pc -%}
-                {%- set link = '<a href="https://waze.com/ul?ll=' + lat + '%2C' + lon + '&navigate=yes&zoom=17">' + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> ' + (pc | upper) -%}
-              {%- else -%}
+                {%- set link = '<a href="https://waze.com/ul?ll=' + (lat | string) + '%2C' + (lon | string) + '&navigate=yes&zoom=17">' + '<ha-icon icon="mdi:waze"></ha-icon>' + '</a> ' + (pc | upper) -%}              {%- else -%}
                 {%- set link = (pc or '') | upper -%}
               {%- endif -%}
               {%- if link != "" -%}
                 {{ link }}
               {%- endif -%}
             </td>
-            <td align="right">{{ price }}p</td>
+            <td align="right">{{ price ~ 'p' if price else '—' }}</td>
           </tr>
           <tr>
             <td colspan="3">
