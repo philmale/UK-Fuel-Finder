@@ -1,8 +1,8 @@
-# UK Fuel Finder API Specification v1.2
+# UK Fuel Finder API Specification v1.3
 
-Last Updated: 26 Feb 2026
+Last Updated: 16 Mar 2026
 
-This is the API specification that uff.py follows. It is not an official document - for that refer to the UK Government official web pages. However, this is my view of the specifiction as it stands as of the last updated date.
+This is the API specification that uff.py follows. It is not an official document - for that refer to the UK Government official web pages. However, this is my view of the specification as it stands as of the last updated date.
 
 **Base URL:** `https://www.fuel-finder.service.gov.uk`
 
@@ -131,7 +131,35 @@ Response schema is identical to [1.1 Generate Access Token](#11-generate-access-
 
 ---
 
-## 2. Information Recipient APIs
+## 2. Rate Limiting
+
+Rate limits are applied separately to Information Recipient APIs and Price Submission APIs. As uff.py is a read-only consumer it is only subject to the Information Recipient limits.
+
+### 2.1 Information Recipient APIs
+
+| Limit | Value |
+|-------|-------|
+| Requests per minute per client | 30 |
+
+A request must not be sent until the response to the previous request has been received. If a new request is sent before the previous one completes, the API returns **HTTP 429**.
+
+HTTP 429 is also returned for general rate limit breaches. In both cases, back off and retry — do not send a new request until the previous one has completed or the retry window has elapsed.
+
+uff.py's default `batch_sleep_seconds` of 4.0 seconds between batch pages gives approximately 15 requests per minute, comfortably within the 30 rpm limit. The `request_with_retry` function handles 429 responses with exponential backoff automatically.
+
+### 2.2 Price Submission APIs
+
+Not applicable to uff.py (read-only consumer). Documented here for completeness.
+
+| Limit | Value |
+|-------|-------|
+| Requests per 5-minute window | 10 |
+| Response on breach | HTTP 403 |
+| Wait required after breach | 5 minutes |
+
+---
+
+## 3. Information Recipient APIs
 
 APIs to fetch fuel prices and PFS (Petrol Fuel Station) information. All endpoints require OAuth2 Bearer token authentication.
 
@@ -145,7 +173,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 2.1 Fetch All PFS Fuel Prices
+### 3.1 Fetch All PFS Fuel Prices
 
 Returns current fuel prices for all stations (full baseline).
 
@@ -197,10 +225,12 @@ Returns a JSON array of station price objects:
 | `node_id`                  | string       | Unique station identifier (SHA-256 hash)                  |
 | `public_phone_number`      | string\|null | Public contact number                                     |
 | `trading_name`             | string       | Station trading name                                      |
-| `fuel_prices`              | array        | Array of fuel price entries for this station               |
+| `fuel_prices`              | array        | Array of fuel price entries for this station              |
 | `fuel_prices[].price`      | string\|null | Price in pence as a decimal string (e.g. `"0120.0000"` = 120.0p), or `null` if unavailable |
 | `fuel_prices[].fuel_type`  | string       | Fuel type identifier (see [Fuel Types](#fuel-types))      |
 | `fuel_prices[].price_last_updated` | string\|null | ISO 8601 datetime of last price update (no timezone; treat as UTC), or `null` |
+
+> **Note:** `mft_organisation_name` was removed from all API responses in the 25–26 Feb 2026 release. It is no longer present in any endpoint response.
 
 #### Error Responses
 
@@ -212,6 +242,10 @@ Returns a JSON array of station price objects:
   "message": "Invalid API key or missing authentication header."
 }
 ```
+
+**`429` — Rate limit exceeded or previous request not yet complete**
+
+Retry after backing off. Do not send a new request until the previous one has received a response.
 
 **`500` — Internal server error**
 
@@ -225,9 +259,9 @@ Returns a JSON array of station price objects:
 
 ---
 
-### 2.2 Fetch Incremental PFS Fuel Prices
+### 3.2 Fetch Incremental PFS Fuel Prices
 
-Returns fuel prices updated since the given timestamp. Same response schema as [2.1](#21-fetch-all-pfs-fuel-prices), but filtered to only include stations with price changes after the specified time.
+Returns fuel prices updated since the given timestamp. Same response schema as [3.1](#31-fetch-all-pfs-fuel-prices), but filtered to only include stations with price changes after the specified time.
 
 ```
 GET /api/v1/pfs/fuel-prices?batch-number={n}&effective-start-timestamp={timestamp}
@@ -248,15 +282,15 @@ GET /api/v1/pfs/fuel-prices?batch-number=1&effective-start-timestamp=2026-01-12 
 
 #### Response — `200`
 
-Same schema as [2.1](#21-fetch-all-pfs-fuel-prices). Only stations with price updates after the specified timestamp are returned. Stations may include only the changed fuel types in their `fuel_prices` array.
+Same schema as [3.1](#31-fetch-all-pfs-fuel-prices). Only stations with price updates after the specified timestamp are returned. Stations may include only the changed fuel types in their `fuel_prices` array.
 
 #### Error Responses
 
-Same as [2.1](#21-fetch-all-pfs-fuel-prices).
+Same as [3.1](#31-fetch-all-pfs-fuel-prices).
 
 ---
 
-### 2.3 Fetch All PFS Station Information
+### 3.3 Fetch All PFS Station Information
 
 Returns full station details for all registered petrol fuel stations (full baseline).
 
@@ -344,6 +378,8 @@ Returns a JSON array of station objects:
 | `opening_times`                    | object       | Opening hours (see below)                       |
 | `fuel_types`                       | array        | Fuel types sold at this station (see [Fuel Types](#fuel-types)) |
 
+> **Note:** `mft_organisation_name` was removed from all API responses in the 25–26 Feb 2026 release. It is no longer present in this or any other endpoint response.
+
 #### Location Object
 
 | Field           | Type         | Description                          |
@@ -378,13 +414,13 @@ Returns a JSON array of station objects:
 
 #### Error Responses
 
-Same as [2.1](#21-fetch-all-pfs-fuel-prices).
+Same as [3.1](#31-fetch-all-pfs-fuel-prices).
 
 ---
 
-### 2.4 Fetch Incremental PFS Station Information
+### 3.4 Fetch Incremental PFS Station Information
 
-Returns station information updated since the given timestamp. Same response schema as [2.3](#23-fetch-all-pfs-station-information).
+Returns station information updated since the given timestamp. Same response schema as [3.3](#33-fetch-all-pfs-station-information).
 
 ```
 GET /api/v1/pfs?batch-number={n}&effective-start-timestamp={timestamp}
@@ -405,11 +441,11 @@ GET /api/v1/pfs?batch-number=1&effective-start-timestamp=2026-01-10 00:00:00
 
 #### Response — `200`
 
-Same schema as [2.3](#23-fetch-all-pfs-station-information).
+Same schema as [3.3](#33-fetch-all-pfs-station-information).
 
 #### Error Responses
 
-Same as [2.1](#21-fetch-all-pfs-fuel-prices).
+Same as [3.1](#31-fetch-all-pfs-fuel-prices).
 
 ---
 
@@ -436,11 +472,20 @@ Known amenity identifiers observed in API responses:
 
 Prices are returned as decimal strings in pence (e.g. `"0120.0000"` = 120.0 pence per litre). Some stations report prices in pounds rather than pence (values below `2.0`); consumers should detect and correct these by multiplying by 100. Prices may be `null` for fuel types the station has registered but not yet priced.
 
+The developer portal warns submitters if a submitted price is below 100 ppl or above 999 ppl, which should over time reduce the frequency of pound-vs-pence entry errors in the live data.
+
 ### Timestamp Format
 
 All timestamps in price data use the format `YYYY-MM-DDTHH:MM:SS` with no timezone indicator. Treat as UTC.
 
 The `effective-start-timestamp` query parameter uses the format `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`).
+
+### Removed Fields
+
+| Field                 | Removed      | Affected endpoints       |
+|-----------------------|--------------|--------------------------|
+| `mft_organisation_name` | 25 Feb 2026 | All API responses        |
+| `mft.name`            | 25 Feb 2026  | CSV extracts only        |
 
 ### Endpoint Summary
 
@@ -452,3 +497,11 @@ The `effective-start-timestamp` query parameter uses the format `YYYY-MM-DD HH:M
 | GET    | `/api/v1/pfs/fuel-prices?effective-start-timestamp=...` | Fetch incremental fuel prices |
 | GET    | `/api/v1/pfs`                             | Fetch all station information (baseline) |
 | GET    | `/api/v1/pfs?effective-start-timestamp=...` | Fetch incremental station information  |
+
+### Changelog
+
+| Version | Date        | Changes                                                                 |
+|---------|-------------|-------------------------------------------------------------------------|
+| 1.3     | 16 Mar 2026 | Added rate limiting section (Section 2); added 429 error responses; noted `mft_organisation_name` removal; section numbering updated; price format note updated re portal validation warning |
+| 1.2     | 26 Feb 2026 | Noted `mft_organisation_name` removal from API responses (25 Feb 2026 release) |
+| 1.1     | —           | Initial public specification                                            |
